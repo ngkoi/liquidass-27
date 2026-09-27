@@ -31,6 +31,7 @@ NSString * const LGPrefsSurfaceVolumeHUD = @"VolumeHUD";
 NSString * const LGPrefsSurfacePillHUD = @"PillHUD";
 NSString * const LGPrefsSurfaceGlobalControls = @"GlobalControls";
 NSString * const LGPrefsSurfaceMoreOptions = @"MoreOptions";
+NSString * const LGPrefsSurfaceCustomViews = @"CustomViews";
 NSString * const LGPrefsSurfaceSettings = @"PrefsSettings";
 
 BOOL LGPrefsSurfaceIsKnown(NSString *identifier) {
@@ -63,6 +64,7 @@ BOOL LGPrefsSurfaceIsKnown(NSString *identifier) {
            [identifier isEqualToString:LGPrefsSurfacePillHUD] ||
            [identifier isEqualToString:LGPrefsSurfaceGlobalControls] ||
            [identifier isEqualToString:LGPrefsSurfaceMoreOptions] ||
+           [identifier isEqualToString:LGPrefsSurfaceCustomViews] ||
            [identifier isEqualToString:LGPrefsSurfaceSettings];
 }
 
@@ -96,6 +98,7 @@ NSString *LGPrefsSurfaceTitle(NSString *identifier) {
     if ([identifier isEqualToString:LGPrefsSurfacePillHUD]) return LGLocalized(@"prefs.surface.pill_hud.title");
     if ([identifier isEqualToString:LGPrefsSurfaceGlobalControls]) return LGLocalized(@"prefs.surface.global_controls.title");
     if ([identifier isEqualToString:LGPrefsSurfaceMoreOptions]) return LGLocalized(@"prefs.misc.about.title");
+    if ([identifier isEqualToString:LGPrefsSurfaceCustomViews]) return LGLocalized(@"prefs.custom_views.title");
     if ([identifier isEqualToString:LGPrefsSurfaceSettings]) return LGLocalized(@"prefs.misc.prefs_settings.title");
     return @"";
 }
@@ -110,6 +113,7 @@ NSString *LGPrefsSurfaceSubtitle(NSString *identifier) {
     if ([identifier isEqualToString:LGPrefsSurfaceVolumeHUD]) return LGLocalized(@"prefs.surface.volume_hud.subtitle");
     if ([identifier isEqualToString:LGPrefsSurfacePillHUD]) return LGLocalized(@"prefs.surface.pill_hud.subtitle");
     if ([identifier isEqualToString:LGPrefsSurfaceMoreOptions]) return LGLocalized(@"prefs.misc.about.subtitle");
+    if ([identifier isEqualToString:LGPrefsSurfaceCustomViews]) return LGLocalized(@"prefs.custom_views.subtitle");
     if ([identifier isEqualToString:LGPrefsSurfaceSettings]) return LGLocalized(@"prefs.misc.prefs_settings.subtitle");
     return @"";
 }
@@ -118,6 +122,7 @@ UIColor *LGPrefsSurfaceTintColor(NSString *identifier) {
     if ([identifier isEqualToString:LGPrefsSurfaceLockscreen]) return UIColor.systemRedColor;
     if ([identifier isEqualToString:LGPrefsSurfaceAppLibrary]) return UIColor.systemGreenColor;
     if ([identifier isEqualToString:LGPrefsSurfaceMoreOptions]) return UIColor.systemIndigoColor;
+    if ([identifier isEqualToString:LGPrefsSurfaceCustomViews]) return UIColor.systemPurpleColor;
     if ([identifier isEqualToString:LGPrefsSurfaceSettings]) return UIColor.systemGrayColor;
     if ([identifier isEqualToString:LGPrefsSurfaceKeyboard]) return UIColor.systemOrangeColor;
     if ([identifier isEqualToString:LGPrefsSurfaceTabBar]) return UIColor.systemIndigoColor;
@@ -159,13 +164,14 @@ NSString *LGPrefsSurfaceSymbolName(NSString *identifier) {
     if ([identifier isEqualToString:LGPrefsSurfacePillHUD]) return @"bell.badge.fill";
     if ([identifier isEqualToString:LGPrefsSurfaceGlobalControls]) return @"slider.horizontal.3";
     if ([identifier isEqualToString:LGPrefsSurfaceMoreOptions]) return @"ellipsis.circle.fill";
+    if ([identifier isEqualToString:LGPrefsSurfaceCustomViews]) return @"viewfinder";
     if ([identifier isEqualToString:LGPrefsSurfaceSettings]) return @"info.circle.fill";
     return @"circle";
 }
 
 NSArray<NSDictionary *> *LGPrefsSurfaceItems(NSString *identifier) {
     if ([identifier isEqualToString:LGPrefsSurfaceSurfaces]) return @[
-        LGGlassQualitySetting(@"Global.Quality", 1.0, 0.1, 1.0, 2),
+        LGScaleBudgetSetting(),
         LGSectionSetting(LGLocalized(@"prefs.surface.group.home.title"), LGLocalized(@"prefs.surface.group.home.subtitle")),
         @{ @"type": @"nav", @"title": LGPrefsSurfaceTitle(LGPrefsSurfaceDock), @"surface_identifier": LGPrefsSurfaceDock },
         @{ @"type": @"nav", @"title": LGPrefsSurfaceTitle(LGPrefsSurfaceFolderIcons), @"surface_identifier": LGPrefsSurfaceFolderIcons },
@@ -223,6 +229,7 @@ NSArray<NSDictionary *> *LGPrefsSurfaceItems(NSString *identifier) {
     if ([identifier isEqualToString:LGPrefsSurfaceLockscreen]) return LGLockscreenItems();
     if ([identifier isEqualToString:LGPrefsSurfaceAppLibrary]) return LGAppLibraryItems();
     if ([identifier isEqualToString:LGPrefsSurfaceMoreOptions]) return LGMoreOptionsItems();
+    if ([identifier isEqualToString:LGPrefsSurfaceCustomViews]) return LGCustomViewsItems();
     if ([identifier isEqualToString:LGPrefsSurfaceSettings]) return LGPrefsSettingsItems();
     return @[];
 }

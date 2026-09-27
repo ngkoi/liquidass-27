@@ -3,9 +3,7 @@
 #import "../Shared/LGLiveBackdropView.h"
 #import "../Shared/LGSharedSupport.h"
 #import "../Shared/LGFramework.h"
-#if !TARGET_OS_SIMULATOR
-#import <AltList/ATLApplicationListMultiSelectionController.h>
-#endif
+
 #import <Preferences/PSSpecifier.h>
 #import <notify.h>
 #import <objc/message.h>
@@ -1570,11 +1568,15 @@ static void LGPresentAppList(UIViewController *controller, NSString *key,
     [specifier setProperty:@YES forKey:@"includeIdentifiersInSearch"];
     [specifier setProperty:@YES forKey:@"showIdentifiersAsSubtitle"];
 
-    ATLApplicationListMultiSelectionController *list =
-        [ATLApplicationListMultiSelectionController new];
-    [list setSpecifier:specifier];
-    list.title = title;
-    [controller.navigationController pushViewController:list animated:YES];
+    Class altClass = NSClassFromString(@"ATLApplicationListMultiSelectionController");
+    UIViewController *list = altClass ? [altClass new] : nil;
+    if (list) {
+        if ([list respondsToSelector:@selector(setSpecifier:)]) {
+            [list performSelector:@selector(setSpecifier:) withObject:specifier];
+        }
+        list.title = title;
+        [controller.navigationController pushViewController:list animated:YES];
+    }
 #endif
 }
 

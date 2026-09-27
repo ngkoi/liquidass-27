@@ -55,7 +55,18 @@ BOOL lgHostEnabled(NSString *prefix) {
     id global = LGGlassPreferenceValue(@"Global.Enabled");
     if (![prefix isEqualToString:@"Global"] && [global isKindOfClass:[NSNumber class]] && ![global boolValue])
         return NO;
-    id v = LGGlassPreferenceValue([prefix stringByAppendingString:@".Enabled"]);
+    static NSDictionary<NSString *, NSString *> *controlKeys;
+    static dispatch_once_t controlKeysOnce;
+    dispatch_once(&controlKeysOnce, ^{
+        controlKeys = @{
+            @"PrefsSwitch":  @"GlobalControls.Switches.Enabled",
+            @"PrefsSlider":  @"GlobalControls.Sliders.Enabled",
+            @"PrefsSegment": @"GlobalControls.Segmented.Enabled",
+        };
+    });
+    NSString *enabledKey = controlKeys[prefix] ?:
+        [prefix stringByAppendingString:@".Enabled"];
+    id v = LGGlassPreferenceValue(enabledKey);
 
     if (!v) {
         static NSDictionary<NSString *, NSString *> *legacyPrefixes;
@@ -138,15 +149,18 @@ LGLiveBackdropView *LGCreateRegisteredGlass(CGRect frame,
                                              NSString *groupName,
                                              NSString *prefix) {
     if (!prefix.length) return nil;
+    if (!lgHostEnabled(prefix)) return nil;
     NSString *filterType = LGFilterTypeForHostPrefix(prefix);
     if (!filterType) {
         LGLog(@"lifecycle rejected unknown host prefix=%@", prefix);
         return nil;
     }
-    return [[LGLiveBackdropView alloc]
+    LGLiveBackdropView *glass = [[LGLiveBackdropView alloc]
         initWithFrame:frame
             groupName:groupName
            filterType:filterType];
+    if (glass) lgTrackGlass(glass, prefix, nil);
+    return glass;
 }
 
 LGLiveBackdropView *LGInstallRegisteredGlassInMaterial(UIView *material,

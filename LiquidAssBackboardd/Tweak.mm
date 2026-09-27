@@ -46,6 +46,7 @@ static void lgClearAccessibilityFiles(void) {
     while ((entry = readdir(directory))) {
         if (strncmp(entry->d_name, "liquidass", 9) != 0 &&
             strncmp(entry->d_name, "liquidglass", 11) != 0) continue;
+        if (!strcmp(entry->d_name, "liquidglass-clock-mask-shared.bin")) continue;
         char path[PATH_MAX] = {};
         snprintf(path, sizeof(path), "%s/%s", directoryPath, entry->d_name);
         unlink(path);
@@ -390,6 +391,7 @@ static float                       g_clockMaskImageScale = 1.0f;
 static float                       g_clockMaskBezelWidthPoints = 24.0f;
 static uint64_t                    g_clockMaskGeneration = 0;
 static uint64_t                    g_clockMaskUploadedGeneration = 0;
+static uint32_t                    g_clockMaskVersion = 1;
 static void                       *g_clockSharedMaskMapping = MAP_FAILED;
 static size_t                      g_clockSharedMaskMappingSize = 0;
 
@@ -408,6 +410,7 @@ typedef struct __attribute__((packed)) {
     float    imageScale;
     float    bezelWidthPoints;
     uint64_t generation;
+    uint32_t version;
 } LGClockMaskHeader;
 
 typedef struct {
@@ -491,10 +494,14 @@ float quartzGlassHighlight(float distanceFromEdge,
     float radial = saturate(distanceFromEdge / ringWidth);
     ring *= 1.0 - radial;
 
-    float2 lightDirection = float2(cos(angle), sin(angle));
-    float threshold = 0.15;
-    float directional = saturate((dot(lightDirection, normal) - threshold) /
-                                 max(1.0 - threshold, 0.0001));
+    // iOS 27 Dual Rim: Primary Top Rim + Secondary Bottom Rim
+    float2 topLightDir = float2(0.0, -1.0);
+    float topDirectional = saturate((dot(topLightDir, normal) - 0.15) / 0.85);
+
+    float2 bottomLightDir = float2(0.0, 1.0);
+    float bottomDirectional = saturate((dot(bottomLightDir, normal) - 0.20) / 0.80) * 0.40;
+
+    float directional = topDirectional + bottomDirectional;
     float highlight = ring * directional;
 
     float oppositeAttenuation = 1.35;
@@ -561,7 +568,7 @@ float2 backdropSampleUV(float2 capturePx,
                         float zoomMix)
 {
     float2 sampleUV;
-    if (isCoverSheet) {
+    if (isCoverSheet || u.useGlyphMask > 0.5) {
         sampleUV = (capturePx + displacementPx) / u.resolution;
     } else {
         float2 screenPx = u.cardOrigin + logicalPx + displacementPx;
@@ -631,7 +638,34 @@ float4 liquidGlassPixel(texture2d<float, access::sample> src,
     float edgeOpacity;
     bool subShape = false;
     float cornerBlend = 0.0;
-    if (u.useGlyphMask > 0.5) {
+    if (u.useGlyphMask > 2.5) {
+        float maskAspect = float(glyphMask.get_height()) / max(float(glyphMask.get_width()), 1.0f);
+        float fullH = float(W) * maskAspect;
+        float topOffset = max(0.0f, fullH - float(H));
+        float2 clockUV = float2((float(gid.x) + 0.5f) / float(W),
+                                (float(gid.y) + 0.5f + topOffset) / max(fullH, 1.0f));
+        if (clockUV.y < 0.0f || clockUV.y > 1.0f) {
+            return src.sample(s, captureUV);
+        }
+        float4 maskSample = glyphMask.sample(s, clockUV);
+        if (maskSample.a < 0.01) {
+            return src.sample(s, captureUV);
+        }
+        float2 normal = float2(maskSample.r * 2.0 - 1.0, maskSample.g * 2.0 - 1.0);
+        float nlen = length(normal);
+        dir = (nlen > 0.01) ? normal / nlen : float2(0.0, -1.0);
+
+        float maskW = float(glyphMask.get_width());
+        float scaleX = maskW > 0.0 ? u.resolution.x / maskW : 1.0;
+        float distPx = (maskSample.b * 255.0) * scaleX;
+        distFromSide = distPx;
+        signedDistance = -distPx;
+        edgeOpacity = maskSample.a;
+    } else if (u.useGlyphMask > 0.5) {
+        float centerAlpha = glyphMask.sample(s, localUV).r;
+        if (centerAlpha < 0.005) {
+            return src.sample(s, captureUV);
+        }
 
         float bestDistance = bezel + 1.0;
         float2 bestDirection = float2(0.0, -1.0);
@@ -780,15 +814,23 @@ float4 liquidGlassPixel(texture2d<float, access::sample> src,
         bezel = mix(bezel, min(bezel, cornerScale), taper);
     }
 
-    if ((R < shortest * 0.45 || subShape) && distFromSide >= bezel) {
+    if ((R < shortest * 0.45 || subShape || u.useGlyphMask > 2.5) && distFromSide >= bezel) {
         float4 flat = src.sample(s, captureUV);
         flat.rgb = mix(flat.rgb, u.tintColor.rgb, u.tintColor.a);
         return flat;
     }
 
-    float normDisp = (distFromSide < bezel) ?
-        quartzGlassEdgeProfile(distFromSide,
-                               min(max(u.glassThickness, 1.0), bezel)) : 0.0;
+    float normDisp = 0.0;
+    if (distFromSide < bezel) {
+        if (u.useGlyphMask > 2.5) {
+            float t = saturate(distFromSide / max(bezel, 0.001));
+            // C1 smooth meniscus: zero slope at outer boundary and zero slope at bezel interior
+            normDisp = 1.0 - t * t * (3.0 - 2.0 * t);
+        } else {
+            normDisp = quartzGlassEdgeProfile(distFromSide,
+                                              min(max(u.glassThickness, 1.0), bezel));
+        }
+    }
     if ((isCoverSheet && dir.y <= -abs(dir.x)) ||
         (isKeyboard && dir.y >= abs(dir.x))) normDisp = 0.0;
 
@@ -822,7 +864,10 @@ float4 liquidGlassPixel(texture2d<float, access::sample> src,
         loadedFallback = true;
         greenSample = fallback;
     }
-    if (greenSample.a < 0.01) return float4(0.0);
+    if (greenSample.a < 0.01) {
+        if (u.useGlyphMask > 2.5) return float4(u.tintColor.rgb, u.tintColor.a);
+        return float4(0.0);
+    }
 
     float4 bg = greenSample;
     if (dispersion > 0.001 && dot(dispPx, dispPx) > 0.0001) {
@@ -871,17 +916,24 @@ float4 liquidGlassPixel(texture2d<float, access::sample> src,
     }
 
     float3 outRGB = mix(bg.rgb, u.tintColor.rgb, u.tintColor.a);
-    float highlight = quartzGlassHighlight(distFromSide, bezel, dir,
-                                           u.fresnelGlareStrength,
-                                           -0.78539816339) *
-                      edgeOpacity;
-    float luminance = dot(outRGB, float3(0.2126, 0.7152, 0.0722));
-    highlight *= mix(0.32, 1.0, luminance);
-    highlight = min(highlight, 0.22);
-    outRGB = 1.0 - (1.0 - outRGB) * (1.0 - highlight);
+    if (u.useGlyphMask > 2.5) {
+        float clockHighlight = quartzGlassHighlight(distFromSide, bezel, dir,
+                                                    1.85,
+                                                    -1.57079632679) * edgeOpacity;
+        outRGB += float3(clockHighlight * 1.15);
+    } else {
+        float highlight = quartzGlassHighlight(distFromSide, bezel, dir,
+                                               u.fresnelGlareStrength,
+                                               -1.57079632679) *
+                          edgeOpacity;
+        float luminance = dot(outRGB, float3(0.2126, 0.7152, 0.0722));
+        highlight *= mix(0.32, 1.0, luminance);
+        highlight = min(highlight, 0.20);
+        outRGB = 1.0 - (1.0 - outRGB) * (1.0 - highlight);
+    }
     if (subShape && distFromSide <= u.borderWidthPixels)
         outRGB = 1.0 - (1.0 - outRGB) * 0.82;
-    return float4(outRGB, edgeOpacity);
+    return float4(clamp(outRGB, 0.0, 1.0), edgeOpacity);
 }
 
 struct LGVertexOut {
@@ -1001,9 +1053,11 @@ static void lgRefreshClockMaskFromSharedMemory(void) {
         memcpy(&snapshot, shared, sizeof(snapshot));
         uint64_t pixelCount = (uint64_t)snapshot.width * (uint64_t)snapshot.height;
         size_t available = g_clockSharedMaskMappingSize - sizeof(snapshot);
-        if (snapshot.magic != 0x4c474d34 || snapshot.version != 1 ||
+        uint64_t expectedBytes = (snapshot.version >= 3) ? (pixelCount * 4) : pixelCount;
+        if (snapshot.magic != 0x4c474d34 ||
+            (snapshot.version != 1 && snapshot.version != 2 && snapshot.version != 3) ||
             !snapshot.width || !snapshot.height ||
-            snapshot.pixelBytes != pixelCount || snapshot.pixelBytes > available ||
+            snapshot.pixelBytes != expectedBytes || snapshot.pixelBytes > available ||
             snapshot.capacity < snapshot.pixelBytes ||
             !isfinite(snapshot.imageScale) || snapshot.imageScale < 0.5f ||
             snapshot.imageScale > 4.0f ||
@@ -1024,6 +1078,7 @@ static void lgRefreshClockMaskFromSharedMemory(void) {
             snapshot.imageScale,
             snapshot.bezelWidthPoints,
             snapshot.generation,
+            snapshot.version,
         };
         NSMutableData *data = [NSMutableData dataWithBytes:&legacyHeader
                                                      length:sizeof(legacyHeader)];
@@ -1040,6 +1095,7 @@ static void lgRefreshClockMaskFromSharedMemory(void) {
         g_clockMaskImageScale = snapshot.imageScale;
         g_clockMaskBezelWidthPoints = snapshot.bezelWidthPoints;
         g_clockMaskGeneration = snapshot.generation;
+        g_clockMaskVersion = snapshot.version;
         os_unfair_lock_unlock(&g_clockMaskLock);
         return;
     }
@@ -1054,26 +1110,32 @@ lgClockMaskTexture(__unsafe_unretained id<MTLDevice> device) {
         return nil;
     }
     NSUInteger width = g_clockMaskWidth, height = g_clockMaskHeight;
+    uint32_t version = g_clockMaskVersion;
+    MTLPixelFormat pixelFormat = (version >= 3) ? MTLPixelFormatRGBA8Unorm : MTLPixelFormatR8Unorm;
+    NSUInteger bytesPerRow = (version >= 3) ? (width * 4) : width;
+
     if (!g_clockMaskTexture ||
-        g_clockMaskUploadedGeneration != g_clockMaskGeneration ||
+        g_clockMaskTexture.pixelFormat != pixelFormat ||
+        g_clockMaskTexture.width != width ||
+        g_clockMaskTexture.height != height ||
         g_clockMaskTexture.device != device) {
         MTLTextureDescriptor *descriptor =
-            [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatR8Unorm
-                                                              width:width
-                                                             height:height
-                                                          mipmapped:NO];
+            [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:pixelFormat
+                                                               width:width
+                                                              height:height
+                                                           mipmapped:NO];
         descriptor.usage = MTLTextureUsageShaderRead;
-        id<MTLTexture> texture = [device newTextureWithDescriptor:descriptor];
-        if (texture) {
-            const uint8_t *bytes =
-                (const uint8_t *)g_clockMaskData.bytes + sizeof(LGClockMaskHeader);
-            [texture replaceRegion:MTLRegionMake2D(0, 0, width, height)
-                       mipmapLevel:0
-                         withBytes:bytes
-                       bytesPerRow:width];
-            g_clockMaskTexture = texture;
-            g_clockMaskUploadedGeneration = g_clockMaskGeneration;
-        }
+        g_clockMaskTexture = [device newTextureWithDescriptor:descriptor];
+        g_clockMaskUploadedGeneration = 0;
+    }
+    if (g_clockMaskTexture && g_clockMaskUploadedGeneration != g_clockMaskGeneration) {
+        const uint8_t *bytes =
+            (const uint8_t *)g_clockMaskData.bytes + sizeof(LGClockMaskHeader);
+        [g_clockMaskTexture replaceRegion:MTLRegionMake2D(0, 0, width, height)
+                              mipmapLevel:0
+                                withBytes:bytes
+                              bytesPerRow:bytesPerRow];
+        g_clockMaskUploadedGeneration = g_clockMaskGeneration;
     }
     id<MTLTexture> texture = g_clockMaskTexture;
     os_unfair_lock_unlock(&g_clockMaskLock);
@@ -1163,6 +1225,10 @@ struct LGRadiusRoute { int host; float radiusRatio; bool dark; };
 static std::unordered_map<uint32_t, LGRadiusRoute> g_radiusRoutes;
 struct LGHostRoute { int host; bool dark; };
 static std::unordered_map<uint32_t, LGHostRoute> g_refreshRoutes;
+struct LGDynamicRoute { LGHostParams params; float radiusRatio; bool dark; };
+static std::unordered_map<uint32_t, LGDynamicRoute> g_dynamicRoutes;
+static os_unfair_lock g_dynamicRoutesLock = OS_UNFAIR_LOCK_INIT;
+static void *g_registrationDescriptor;
 static const int kDynamicRadiusSteps = 32;
 
 static bool lgUsesDynamicRadiusRoute(int host) {
@@ -1172,6 +1238,17 @@ static bool lgUsesDynamicRadiusRoute(int host) {
 
 static const LGHostParams *lgHostParamsForAtom(uint32_t atom, bool *dark) {
     if (dark) *dark = false;
+    os_unfair_lock_lock(&g_dynamicRoutesLock);
+    auto dynamicRoute = g_dynamicRoutes.find(atom);
+    if (dynamicRoute != g_dynamicRoutes.end()) {
+        static thread_local LGHostParams routed;
+        routed = dynamicRoute->second.params;
+        routed.radiusRatio = dynamicRoute->second.radiusRatio;
+        if (dark) *dark = dynamicRoute->second.dark;
+        os_unfair_lock_unlock(&g_dynamicRoutesLock);
+        return &routed;
+    }
+    os_unfair_lock_unlock(&g_dynamicRoutesLock);
     auto route = g_radiusRoutes.find(atom);
     if (route != g_radiusRoutes.end()) {
         static thread_local LGHostParams routed;
@@ -1289,16 +1366,19 @@ static void lgReloadHostPrefs(void) {
         }
     }
     g_hostParamsInit = true;
-
     lglog("lgReloadHostPrefs: %s (%d hosts, %d overrides) banner.bezel=%.3f refr=%.2f",
           prefs ? "loaded prefs" : "defaults", kHostCount, overrides,
           g_hostParams[4].bezelWidthPoints, g_hostParams[4].refractionScale);
 }
 
+static void lgRegisterCustomRuleAtomsFromPrefs(void *descriptor);
+
 static void lgPrefsReloadCallback(CFNotificationCenterRef c, void *o, CFStringRef n,
                                    const void *obj, CFDictionaryRef info) {
     lglog("prefs Reload received; re-reading %s", lgPrefsPath().UTF8String);
     lgReloadHostPrefs();
+    if (g_registrationDescriptor)
+        lgRegisterCustomRuleAtomsFromPrefs(g_registrationDescriptor);
 
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
         kLGParametersReloadedNote, NULL, NULL, true);
@@ -1381,8 +1461,8 @@ static void ourCustomRender13(void *self, void *filter, void *layer, void *ctx,
     lu.refractionScale    = hp->refractionScale;
     lu.refractiveIndex    = hp->refractiveIndex;
     lu.dispersionStrength = hp->dispersionStrength;
-    lu.fresnelGlareStrength = !strcmp(hp->prefPrefix, "Clock")
-        ? g_fresnelGlareStrength : 0.0f;
+    lu.fresnelGlareStrength = g_fresnelGlareStrength > 0.0f
+        ? g_fresnelGlareStrength : 0.35f;
     lu.tintColor          = darkTint ? simd_make_float4(hp->darkTintR, hp->darkTintG, hp->darkTintB, hp->darkTintStrength)
                                   : simd_make_float4(hp->tintR, hp->tintG, hp->tintB, hp->tintStrength);
 
@@ -1445,14 +1525,16 @@ static void ourCustomRender13(void *self, void *filter, void *layer, void *ctx,
     id<MTLTexture> clockMask = nil;
     if (!strcmp(hp->prefPrefix, "Clock")) {
         clockMask = lgClockMaskTexture(device);
-        lu.useGlyphMask = clockMask ? 1.f : 0.f;
+        lu.useGlyphMask = clockMask ? ((g_clockMaskVersion >= 3) ? 3.0f : 1.0f) : 0.f;
         if (clockMask) {
             float maskPointWidth = (float)clockMask.width / g_clockMaskImageScale;
-            float maskPointHeight = (float)clockMask.height / g_clockMaskImageScale;
-            float pixelsPerPointX = maskPointWidth > 0.0f ? (float)w / maskPointWidth : 1.0f;
-            float pixelsPerPointY = maskPointHeight > 0.0f ? (float)h / maskPointHeight : 1.0f;
-            float pixelsPerPoint = fminf(pixelsPerPointX, pixelsPerPointY);
+            float pixelsPerPoint = maskPointWidth > 0.0f ? (float)w / maskPointWidth : 1.0f;
             lu.bezelWidth = fmaxf(1.0f, g_clockMaskBezelWidthPoints * pixelsPerPoint);
+            static int s_clockLogCount = 0;
+            if (s_clockLogCount++ < 15) {
+                lglog("CLOCK RENDER: w=%llu h=%llu maskW=%zu maskH=%zu ver=%u bezel=%.1f",
+                      w, h, clockMask.width, clockMask.height, g_clockMaskVersion, lu.bezelWidth);
+            }
         }
     } else if (!strcmp(hp->prefPrefix, "Keyboard")) {
         lu.useGlyphMask = 0.25f;
@@ -1899,6 +1981,105 @@ static void lgRegisterCustomAtom(uint32_t atom, void *descriptor) {
     if (inserted) g_addFilter(atom, descriptor);
 }
 
+static NSString *lgCustomRuleFilterID(NSString *ruleID) {
+    NSMutableString *safeID = [NSMutableString stringWithCapacity:ruleID.length];
+    NSCharacterSet *allowed = [NSCharacterSet characterSetWithCharactersInString:
+        @"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"];
+    for (NSUInteger index = 0; index < ruleID.length; index++) {
+        unichar character = [ruleID characterAtIndex:index];
+        unichar safeCharacter = [allowed characterIsMember:character] ? character : (unichar)'_';
+        [safeID appendFormat:@"%C", safeCharacter];
+    }
+    return safeID;
+}
+
+static LGHostParams lgCustomRuleParams(NSDictionary *prefs, NSString *ruleID) {
+    const LGHostDefinition *defaults = &kLGHostRegistry[LGHostIdentifierCustomViews];
+    LGHostParams params = {
+        defaults->filterType, defaults->preferencePrefix, 0,
+        defaults->cornerRadiusRatio, defaults->bezelWidthPoints,
+        defaults->glassThickness, defaults->refractionScale,
+        defaults->refractiveIndex, defaults->dispersionStrength,
+        0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f
+    };
+    simd_float4 tint;
+    if (lgDecodeTintColor([NSString stringWithUTF8String:defaults->lightTintHex], &tint)) {
+        params.tintR = tint.x; params.tintG = tint.y;
+        params.tintB = tint.z; params.tintStrength = tint.w;
+    }
+    if (lgDecodeTintColor([NSString stringWithUTF8String:defaults->darkTintHex], &tint)) {
+        params.darkTintR = tint.x; params.darkTintG = tint.y;
+        params.darkTintB = tint.z; params.darkTintStrength = tint.w;
+    }
+    NSString *prefix = [NSString stringWithFormat:@"CustomViews.Rule.%@.", ruleID];
+    NSNumber *value;
+#define LG_CUSTOM_FLOAT(field, suffix) \
+    value = prefs[[prefix stringByAppendingString:@suffix]]; \
+    if ([value isKindOfClass:NSNumber.class]) params.field = value.floatValue
+    LG_CUSTOM_FLOAT(bezelWidthPoints, "BezelWidth");
+    LG_CUSTOM_FLOAT(glassThickness, "GlassThickness");
+    LG_CUSTOM_FLOAT(refractionScale, "RefractionScale");
+    LG_CUSTOM_FLOAT(refractiveIndex, "RefractiveIndex");
+    LG_CUSTOM_FLOAT(dispersionStrength, "DispersionStrength");
+#undef LG_CUSTOM_FLOAT
+    value = prefs[[prefix stringByAppendingString:@"DispersionEnabled"]];
+    if ([value isKindOfClass:NSNumber.class] && !value.boolValue)
+        params.dispersionStrength = 0.0f;
+    if (lgDecodeTintColor(prefs[[prefix stringByAppendingString:@"LightTintColor"]], &tint)) {
+        params.tintR = tint.x; params.tintG = tint.y;
+        params.tintB = tint.z; params.tintStrength = tint.w;
+    }
+    if (lgDecodeTintColor(prefs[[prefix stringByAppendingString:@"DarkTintColor"]], &tint)) {
+        params.darkTintR = tint.x; params.darkTintG = tint.y;
+        params.darkTintB = tint.z; params.darkTintStrength = tint.w;
+    }
+    return params;
+}
+
+static void lgRegisterDynamicRoute(NSString *name, LGHostParams params,
+                                   float radiusRatio, bool dark, void *descriptor) {
+    uint32_t atom = g_internAtom(name.UTF8String);
+    if (!atom) return;
+    os_unfair_lock_lock(&g_dynamicRoutesLock);
+    g_dynamicRoutes[atom] = { params, radiusRatio, dark };
+    os_unfair_lock_unlock(&g_dynamicRoutesLock);
+    lgRegisterCustomAtom(atom, descriptor);
+}
+
+static void lgRegisterCustomRuleAtomsFromPrefs(void *descriptor) {
+    if (!descriptor) return;
+    NSDictionary *prefs = [NSDictionary dictionaryWithContentsOfFile:lgPrefsPath()];
+    NSArray *ruleIDs = prefs[@"CustomViews.RuleIDs"];
+    if (![ruleIDs isKindOfClass:NSArray.class]) return;
+    int rules = 0;
+    for (id value in ruleIDs) {
+        if (![value isKindOfClass:NSString.class] || ![value length]) continue;
+        NSString *ruleID = value;
+        NSString *safeID = lgCustomRuleFilterID(ruleID);
+        if (!safeID.length) continue;
+        LGHostParams params = lgCustomRuleParams(prefs, ruleID);
+        NSString *base = [@"dylv.liquidglass.custom." stringByAppendingString:safeID];
+        for (NSString *suffix in @[@"", @".refresh", @".dark", @".dark.refresh"])
+            lgRegisterDynamicRoute([base stringByAppendingString:suffix], params,
+                                   params.radiusRatio, [suffix containsString:@".dark"], descriptor);
+        for (int step = 0; step <= kDynamicRadiusSteps / 2; step++) {
+            NSString *radius = [base stringByAppendingFormat:@".r%d", step];
+            for (NSNumber *darkValue in @[@NO, @YES]) {
+                NSString *name = darkValue.boolValue
+                    ? [radius stringByAppendingString:@".dark"] : radius;
+                lgRegisterDynamicRoute(name, params,
+                                       (float)step / (float)kDynamicRadiusSteps,
+                                       darkValue.boolValue, descriptor);
+                lgRegisterDynamicRoute([name stringByAppendingString:@".refresh"], params,
+                                       (float)step / (float)kDynamicRadiusSteps,
+                                       darkValue.boolValue, descriptor);
+            }
+        }
+        rules++;
+    }
+    lglog("custom view filters ready: %d rules", rules);
+}
+
 // registering before filter table exists breaks system blur, this became a tweak btw check out https://github.com/winaviation-tweaks/Blurless
 static bool registerCustomFilter(void) {
     void **filterTableSlot = (void **)LGResolve_FilterTableSlot();
@@ -2030,6 +2211,7 @@ static bool registerCustomFilter(void) {
         registrationDescriptor = g_customCtx;
     }
 
+    g_registrationDescriptor = registrationDescriptor;
     lgStartPrefsObserver();
 
     g_hostParams[0].atom = atomId;
@@ -2096,6 +2278,7 @@ static bool registerCustomFilter(void) {
             }
         }
     }
+    lgRegisterCustomRuleAtomsFromPrefs(registrationDescriptor);
 
     g_filterRegistered = true;
     lglog("registerCustomFilter: done mode=%s descriptor=%p renderSlot=%d atom=0x%x hosts=%d",

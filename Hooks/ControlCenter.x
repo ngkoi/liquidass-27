@@ -145,8 +145,13 @@ static CGFloat ccGlassRadiusForMaterial(UIView *mat) {
     CGFloat w = CGRectGetWidth(mat.bounds), h = CGRectGetHeight(mat.bounds);
     if (w < 30.0 || h < 30.0) return -1.0;
 
+    if (hasAncestorOfClassName(mat, @"CCUIButtonModuleView") ||
+        (fabs(w - h) < 4.0 && mat.layer.cornerRadius >= fmin(w, h) * 0.45)) {
+        return ccPillRadius(mat);
+    }
+
     UIView *module = ccModuleAncestor(mat);
-    if (module && ccIsModuleCandidate(module)) return ccModuleCornerRadius(module);
+    if (module && ccIsModuleCandidate(module)) return fmin(ccModuleCornerRadius(module), ccPillRadius(mat));
     if (w > 100.0 && h < 100.0) return h * 0.5;
     if (h > 100.0 && w < 100.0) return w * 0.5;
     return ccPillRadius(mat);
@@ -996,7 +1001,8 @@ static void ccRefreshContentContainerGlass(UIView *container) {
     NSNumber *desired = objc_getAssociatedObject(self, kCCRoundDesiredRadiusKey);
     NSString *keyPath = [animation respondsToSelector:@selector(keyPath)]
         ? [(id)animation keyPath] : nil;
-    if (desired && [keyPath isEqualToString:@"cornerRadius"]) {
+    UIView *owner = [self.delegate isKindOfClass:UIView.class] ? (UIView *)self.delegate : nil;
+    if (desired && !ccSliderAncestor(owner) && [keyPath isEqualToString:@"cornerRadius"]) {
         if ([animation isKindOfClass:CABasicAnimation.class]) {
             CABasicAnimation *basic = (CABasicAnimation *)animation;
             basic.fromValue = desired;

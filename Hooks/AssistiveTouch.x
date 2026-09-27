@@ -3,6 +3,7 @@
 #import <objc/runtime.h>
 #import <objc/message.h>
 #import "../Shared/LGLiveBackdropView.h"
+#import "../Shared/LGGlassKit.h"
 #import "../Shared/LGSharedSupport.h"
 
 #import "../Shared/LGFramework.h"
@@ -1098,8 +1099,7 @@ static void LGAssistiveTouchPrefsChanged(CFNotificationCenterRef center, void *o
     LGInvalidateGlassPreferenceCache();
     HNDRocker *rocker = sCurrentActiveRocker;
     if (!rocker) return;
-    id enabledVal = LGGlassPreferenceValue(@"AssistiveTouch.Enabled");
-    BOOL enabled = enabledVal ? [enabledVal boolValue] : YES;
+    BOOL enabled = lgHostEnabled(@"AssistiveTouch");
     ASSHeldGlassView *glass = [rocker ass_glassView];
     if (!enabled && glass) {
         glass.hidden = YES;
@@ -1118,8 +1118,7 @@ static void LGAssistiveTouchRestartRequested(CFNotificationCenterRef center, voi
 %ctor {
     if (![NSProcessInfo.processInfo.processName isEqualToString:@"assistivetouchd"]) return;
 
-    id enabledVal = LGGlassPreferenceValue(@"AssistiveTouch.Enabled");
-    if (enabledVal && ![enabledVal boolValue]) return;
+    if (!lgHostEnabled(@"AssistiveTouch")) return;
 
     %init(LGAssistiveTouchHooks);
 
@@ -1135,4 +1134,3 @@ static void LGAssistiveTouchRestartRequested(CFNotificationCenterRef center, voi
         CFSTR("dylv.liquidassprefs/RestartAssistiveTouch"), NULL,
         CFNotificationSuspensionBehaviorDeliverImmediately);
 }
-

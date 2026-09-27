@@ -617,6 +617,11 @@ static void LGApplyTabBarGlyphColor(UITabBar *bar, UIColor *color) {
     }];
 }
 
+static UIColor *LGTabBarFallbackGlyphColor(UITabBar *bar) {
+    return bar.traitCollection.userInterfaceStyle == UIUserInterfaceStyleDark
+        ? UIColor.whiteColor : UIColor.blackColor;
+}
+
 static void LGSampleTabBarLuma(UITabBar *bar) {
     if (!bar.window || CGRectIsEmpty(bar.bounds)) return;
     CGRect rect = [bar convertRect:bar.bounds toView:bar.window];
@@ -974,24 +979,25 @@ static void LGConfigureTabBarAppearance(UITabBar *bar) {
     if ([objc_getAssociatedObject(bar, kLGTabBarAppearanceConfiguredKey) boolValue]) return;
     objc_setAssociatedObject(bar, kLGTabBarAppearanceConfiguredKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
-    bar.unselectedItemTintColor = [UIColor whiteColor];
+    UIColor *fallback = LGTabBarFallbackGlyphColor(bar);
+    bar.unselectedItemTintColor = fallback;
     if (@available(iOS 13.0, *)) {
         UITabBarAppearance *appearance = bar.standardAppearance;
         if (!appearance) appearance = [[UITabBarAppearance alloc] init];
         else appearance = [appearance copy];
-        appearance.stackedLayoutAppearance.normal.iconColor = [UIColor whiteColor];
+        appearance.stackedLayoutAppearance.normal.iconColor = fallback;
         NSMutableDictionary *stackedAttrs = [appearance.stackedLayoutAppearance.normal.titleTextAttributes mutableCopy] ?: [NSMutableDictionary dictionary];
-        stackedAttrs[NSForegroundColorAttributeName] = [UIColor whiteColor];
+        stackedAttrs[NSForegroundColorAttributeName] = fallback;
         appearance.stackedLayoutAppearance.normal.titleTextAttributes = stackedAttrs;
 
-        appearance.inlineLayoutAppearance.normal.iconColor = [UIColor whiteColor];
+        appearance.inlineLayoutAppearance.normal.iconColor = fallback;
         NSMutableDictionary *inlineAttrs = [appearance.inlineLayoutAppearance.normal.titleTextAttributes mutableCopy] ?: [NSMutableDictionary dictionary];
-        inlineAttrs[NSForegroundColorAttributeName] = [UIColor whiteColor];
+        inlineAttrs[NSForegroundColorAttributeName] = fallback;
         appearance.inlineLayoutAppearance.normal.titleTextAttributes = inlineAttrs;
 
-        appearance.compactInlineLayoutAppearance.normal.iconColor = [UIColor whiteColor];
+        appearance.compactInlineLayoutAppearance.normal.iconColor = fallback;
         NSMutableDictionary *compactAttrs = [appearance.compactInlineLayoutAppearance.normal.titleTextAttributes mutableCopy] ?: [NSMutableDictionary dictionary];
-        compactAttrs[NSForegroundColorAttributeName] = [UIColor whiteColor];
+        compactAttrs[NSForegroundColorAttributeName] = fallback;
         appearance.compactInlineLayoutAppearance.normal.titleTextAttributes = compactAttrs;
 
         bar.standardAppearance = appearance;

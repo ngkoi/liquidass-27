@@ -20,6 +20,9 @@ NSString *LGFilterTypeForHostPrefix(NSString *prefix);
 @property (nonatomic, copy) NSString *lgFilterType;
 
 @property (nonatomic, copy) NSNumber *lgSpecularEnabledOverride;
+@property (nonatomic, copy) NSNumber *lgSpecularOpacityOverride;
+@property (nonatomic, copy) NSNumber *lgNativeBlurRadiusOverride;
+@property (nonatomic, copy) NSNumber *lgQualityScaleOverride;
 
 - (instancetype)initWithFrame:(CGRect)frame groupName:(NSString *)groupName;
 
@@ -31,6 +34,8 @@ NSString *LGFilterTypeForHostPrefix(NSString *prefix);
 - (void)applyFilters;
 - (void)lgInvalidateFilterContents;
 - (BOOL)lgFilterAttached;
+- (void)updateSpecular;
+- (void)invalidateSpecularCache;
 
 @property (nonatomic, assign) CGFloat lgBackdropZoom;
 @end

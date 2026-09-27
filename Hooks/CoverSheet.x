@@ -794,6 +794,7 @@ static LGLiveBackdropView *LGCoverSheetEnsureGlass(UIView *panel) {
     }
     if (!glass) {
         glass = LGCreateRegisteredGlass(panel.frame, nil, @"CoverSheet");
+        if (!glass) return nil;
         glass.autoresizingMask = UIViewAutoresizingNone;
         glass.userInteractionEnabled = NO;
         glass.backgroundColor = UIColor.clearColor;

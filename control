@@ -1,12 +1,9 @@
-Package: dylv.liquidass
-Name: Liquid (Gl)ass
-Version: 0.1.1-2b
+Package: com.ngkhoi.liquidass27
+Name: Liquid (Gl)ass 27
+Version: 0.1.2b-27
 Architecture: iphoneos-arm
-Description: next level diarrhea
-Maintainer: dylv
-Author: dylv
+Description: liquidass but 27
+Maintainer: ngkhoi, dylv
+Author: ngkhoi, dylv
 Section: Tweaks
-Depends: mobilesubstrate (>= 0.9.5000), firmware (>= 14.0), firmware (<< 26.0), preferenceloader, com.opa334.altlist
-Icon: https://winaviation.github.io/repo/depictions/dylv.liquidass/icon.png
-Replaces: dylv.blurless
-Conflicts: dylv.blurless
+Depends: mobilesubstrate (>= 0.9.5000), firmware (>= 14.0), preferenceloader

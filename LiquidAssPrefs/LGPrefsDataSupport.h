@@ -45,6 +45,7 @@ NSDictionary *LGMenuSetting(NSString *key, NSString *title, NSString *subtitle, 
 NSDictionary *LGSliderSetting(NSString *key, NSString *title, NSString *subtitle,
                               CGFloat fallback, CGFloat min, CGFloat max, NSInteger decimals);
 NSDictionary *LGGlassQualitySetting(NSString *key, CGFloat fallback, CGFloat min, CGFloat max, NSInteger decimals);
+NSDictionary *LGScaleBudgetSetting(void);
 NSDictionary *LGGlassEnabledSetting(NSString *key, BOOL fallback);
 BOOL LGPrefsItemIsVisible(NSDictionary *item);
 
@@ -66,6 +67,12 @@ NSArray<NSDictionary *> *LGHomescreenItems(void);
 NSArray<NSDictionary *> *LGAllSurfaceItems(void);
 NSArray<NSDictionary *> *LGPrefsSettingsItems(void);
 NSArray<NSDictionary *> *LGMoreOptionsItems(void);
+NSArray<NSDictionary *> *LGCustomViewsItems(void);
+NSArray<NSString *> *LGCustomViewRuleIDs(void);
+NSString *LGCreateCustomViewRule(void);
+void LGDeleteCustomViewRule(NSString *ruleID);
+NSArray<NSDictionary *> *LGCustomViewRuleItems(NSString *ruleID);
+NSArray<NSString *> *LGAllCustomViewPreferenceKeys(void);
 
 NSString *LGExportPreferencesJSONString(void);
 BOOL LGImportPreferencesJSONString(NSString *jsonString, NSError **error);

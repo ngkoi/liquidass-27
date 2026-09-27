@@ -14,7 +14,6 @@ ifeq ($(THEOS_TARGET_NAME),iphone_simulator)
 LiquidAssPrefs_LDFLAGS += -undefined dynamic_lookup
 else
 LiquidAssPrefs_PRIVATE_FRAMEWORKS = Preferences
-LiquidAssPrefs_EXTRA_FRAMEWORKS += AltList
 endif
 ifeq ($(THEOS_PACKAGE_SCHEME),roothide)
 LiquidAssPrefs_CFLAGS += -F$(THEOS)/lib/iphone/rootless

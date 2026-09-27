@@ -1,90 +1,5 @@
-#import "LGFramework.h"
+#import "LGButtonView.h"
 #import <objc/message.h>
-
-@implementation LGAdjustableBlurView
-
-+ (Class)layerClass {
-    return NSClassFromString(@"CABackdropLayer") ?: CALayer.class;
-}
-
-- (instancetype)initWithFrame:(CGRect)frame blurRadius:(CGFloat)radius {
-    self = [super initWithFrame:frame];
-    if (!self) return nil;
-    _blurRadius = radius;
-    _qualityScale = 0.35;
-    self.userInteractionEnabled = NO;
-    self.backgroundColor = UIColor.clearColor;
-    self.opaque = NO;
-    self.layer.cornerCurve = kCACornerCurveContinuous;
-    [self applyFilters];
-    return self;
-}
-
-- (void)setCornerRadius:(CGFloat)cornerRadius {
-    _cornerRadius = cornerRadius;
-    self.layer.cornerRadius = cornerRadius;
-    self.layer.cornerCurve = kCACornerCurveContinuous;
-    self.layer.masksToBounds = YES;
-}
-
-- (void)didMoveToWindow {
-    [super didMoveToWindow];
-    [self applyFilters];
-}
-
-- (void)layoutSubviews {
-    [super layoutSubviews];
-    [self applyFilters];
-}
-
-- (void)setBlurRadius:(CGFloat)blurRadius {
-    if (fabs(_blurRadius - blurRadius) <= 0.01) return;
-    _blurRadius = blurRadius;
-    [self applyFilters];
-}
-
-- (void)applyFilters {
-    CALayer *layer = self.layer;
-    Class backdropClass = NSClassFromString(@"CABackdropLayer");
-    if (!backdropClass || ![layer isKindOfClass:backdropClass]) return;
-
-    @try {
-        if (self.blurRadius <= 0.0) {
-            layer.filters = nil;
-            return;
-        }
-        [layer setValue:@NO forKey:@"layerUsesCoreImageFilters"];
-        [layer setValue:@(!self.capturesAppIcon) forKey:@"windowServerAware"];
-        if (self.capturesAppIcon) {
-            [layer setValue:[NSString stringWithFormat:@"dylv.liquidglass.blur.%p", self]
-                     forKey:@"groupName"];
-        }
-        [layer setValue:@(self.qualityScale) forKey:@"scale"];
-
-        NSArray *existing = layer.filters;
-        if (existing.count == 1) {
-            NSString *type = nil;
-            @try { type = [existing.firstObject valueForKey:@"type"]; } @catch (...) {}
-            if ([type isEqualToString:@"gaussianBlur"]) {
-                NSNumber *radius = nil;
-                @try { radius = [existing.firstObject valueForKey:@"inputRadius"]; } @catch (...) {}
-                if (radius && fabs(radius.doubleValue - self.blurRadius) < 0.01) return;
-            }
-        }
-
-        Class filterClass = NSClassFromString(@"CAFilter");
-        if (!filterClass) return;
-        id filter = ((id (*)(Class, SEL, NSString *))objc_msgSend)(
-            filterClass, NSSelectorFromString(@"filterWithType:"), @"gaussianBlur");
-        if (filter) {
-            [filter setValue:@(self.blurRadius) forKey:@"inputRadius"];
-            [filter setValue:@YES forKey:@"inputNormalizeEdges"];
-            layer.filters = @[filter];
-        }
-    } @catch (__unused NSException *exception) {}
-}
-
-@end
 
 static UIImage *CreateRadialGlowImage(CGFloat diameter) {
     CGSize size = CGSizeMake(diameter, diameter);
@@ -93,10 +8,10 @@ static UIImage *CreateRadialGlowImage(CGFloat diameter) {
     if (!ctx) return nil;
 
     CGColorSpaceRef colorSpace = CGColorSpaceCreateDeviceRGB();
-    NSArray *colors = @[(id)[UIColor colorWithWhite:1.0 alpha:0.34].CGColor,
-                        (id)[UIColor colorWithWhite:1.0 alpha:0.12].CGColor,
+    NSArray *colors = @[(id)[UIColor colorWithWhite:1.0 alpha:0.95].CGColor,
+                        (id)[UIColor colorWithWhite:1.0 alpha:0.60].CGColor,
                         (id)[UIColor colorWithWhite:1.0 alpha:0.0].CGColor];
-    CGFloat locations[] = {0.0, 0.55, 1.0};
+    CGFloat locations[] = {0.0, 0.35, 1.0};
     CGGradientRef gradient = CGGradientCreateWithColors(colorSpace, (__bridge CFArrayRef)colors, locations);
 
     CGPoint center = CGPointMake(diameter / 2.0, diameter / 2.0);
@@ -113,126 +28,6 @@ static UIImage *CreateRadialGlowImage(CGFloat diameter) {
 @interface LGButtonView ()
 @property (nonatomic, assign) NSTimeInterval touchDownTime;
 @property (nonatomic, assign) uint64_t touchCycleId;
-@end
-
-@interface LGSpecularHighlightView ()
-@property (nonatomic, strong) CAGradientLayer *fresnelGlare;
-@property (nonatomic, strong) CAGradientLayer *specularRim;
-@property (nonatomic, strong) CAShapeLayer *rimMask;
-@property (nonatomic, strong) CAGradientLayer *darkEdgeRim;
-@property (nonatomic, strong) CAShapeLayer *darkEdgeMask;
-@end
-
-@implementation LGSpecularHighlightView
-
-- (instancetype)initWithFrame:(CGRect)frame {
-    return [self initWithFrame:frame cornerRadius:40.0];
-}
-
-- (instancetype)initWithFrame:(CGRect)frame cornerRadius:(CGFloat)cornerRadius {
-    self = [super initWithFrame:frame];
-    if (self) {
-        _cornerRadius = cornerRadius;
-        _strokeWidth = 0.50;
-        _topSpecularOpacity = 0.60;
-        _bottomSpecularOpacity = 0.30;
-
-        self.userInteractionEnabled = NO;
-        self.backgroundColor = UIColor.clearColor;
-
-        CGFloat glareAlpha = _topSpecularOpacity * 0.26;
-        self.fresnelGlare = [CAGradientLayer layer];
-        self.fresnelGlare.colors = @[
-            (id)[UIColor colorWithWhite:1.0 alpha:glareAlpha].CGColor,
-            (id)[UIColor colorWithWhite:1.0 alpha:glareAlpha * 0.55].CGColor,
-            (id)[UIColor colorWithWhite:1.0 alpha:glareAlpha * 0.22].CGColor,
-            (id)[UIColor colorWithWhite:1.0 alpha:glareAlpha * 0.06].CGColor,
-            (id)UIColor.clearColor.CGColor,
-            (id)UIColor.clearColor.CGColor,
-            (id)[UIColor colorWithWhite:1.0 alpha:glareAlpha * 0.06].CGColor,
-            (id)[UIColor colorWithWhite:1.0 alpha:glareAlpha * 0.22].CGColor,
-            (id)[UIColor colorWithWhite:1.0 alpha:glareAlpha * 0.55].CGColor,
-            (id)[UIColor colorWithWhite:1.0 alpha:glareAlpha].CGColor
-        ];
-        self.fresnelGlare.locations = @[
-            @0.0, @0.035, @0.09, @0.18, @0.28,
-            @0.72, @0.82, @0.91, @0.965, @1.0
-        ];
-        self.fresnelGlare.startPoint = CGPointMake(0.5, 0.0);
-        self.fresnelGlare.endPoint = CGPointMake(0.5, 1.0);
-        [self.layer addSublayer:self.fresnelGlare];
-
-        self.darkEdgeRim = [CAGradientLayer layer];
-        self.darkEdgeRim.colors = @[
-            (id)[UIColor colorWithWhite:0.0 alpha:0.24].CGColor,
-            (id)[UIColor colorWithWhite:0.0 alpha:0.36].CGColor,
-            (id)[UIColor colorWithWhite:0.0 alpha:0.48].CGColor,
-            (id)[UIColor colorWithWhite:0.0 alpha:0.48].CGColor,
-            (id)[UIColor colorWithWhite:0.0 alpha:0.36].CGColor,
-            (id)[UIColor colorWithWhite:0.0 alpha:0.28].CGColor
-        ];
-        self.darkEdgeRim.locations = @[@0.0, @0.15, @0.30, @0.70, @0.85, @1.0];
-        self.darkEdgeRim.startPoint = CGPointMake(0.5, 0.0);
-        self.darkEdgeRim.endPoint = CGPointMake(0.5, 1.0);
-
-        self.darkEdgeMask = [CAShapeLayer layer];
-        self.darkEdgeMask.fillColor = UIColor.clearColor.CGColor;
-        self.darkEdgeMask.strokeColor = UIColor.whiteColor.CGColor;
-        self.darkEdgeMask.lineWidth = 0.525;
-        self.darkEdgeRim.mask = self.darkEdgeMask;
-        [self.layer addSublayer:self.darkEdgeRim];
-
-        self.specularRim = [CAGradientLayer layer];
-        self.specularRim.colors = @[
-            (id)[UIColor colorWithWhite:1.0 alpha:_topSpecularOpacity * 0.45].CGColor,
-            (id)[UIColor colorWithWhite:1.0 alpha:_topSpecularOpacity * 0.20].CGColor,
-            (id)[UIColor colorWithWhite:1.0 alpha:0.0].CGColor,
-            (id)[UIColor colorWithWhite:1.0 alpha:0.0].CGColor,
-            (id)[UIColor colorWithWhite:1.0 alpha:_topSpecularOpacity * 0.20].CGColor,
-            (id)[UIColor colorWithWhite:1.0 alpha:_topSpecularOpacity * 0.45].CGColor
-        ];
-        self.specularRim.locations = @[@0.0, @0.055, @0.12, @0.88, @0.945, @1.0];
-        self.specularRim.startPoint = CGPointMake(0.5, 0.0);
-        self.specularRim.endPoint = CGPointMake(0.5, 1.0);
-        self.rimMask = [CAShapeLayer layer];
-        self.rimMask.fillColor = UIColor.clearColor.CGColor;
-        self.rimMask.strokeColor = UIColor.whiteColor.CGColor;
-        self.rimMask.lineWidth = _strokeWidth;
-        self.specularRim.mask = self.rimMask;
-        [self.layer addSublayer:self.specularRim];
-    }
-    return self;
-}
-
-- (void)setCornerRadius:(CGFloat)cornerRadius {
-    _cornerRadius = cornerRadius;
-    [self setNeedsLayout];
-}
-
-- (void)layoutSubviews {
-    [super layoutSubviews];
-    self.fresnelGlare.frame = self.bounds;
-    self.fresnelGlare.cornerRadius = self.cornerRadius;
-
-    self.darkEdgeRim.frame = self.bounds;
-    UIBezierPath *outerPath = [UIBezierPath bezierPathWithRoundedRect:self.bounds
-                                                   cornerRadius:self.cornerRadius];
-    self.darkEdgeMask.path = outerPath.CGPath;
-
-    CGFloat specularInset = 0.85;
-    CGRect innerRect = CGRectInset(self.bounds, specularInset, specularInset);
-    if (CGRectGetWidth(innerRect) <= 0.0 || CGRectGetHeight(innerRect) <= 0.0) {
-        innerRect = self.bounds;
-    }
-    CGFloat innerRadius = fmax(0.0, self.cornerRadius - specularInset);
-
-    self.specularRim.frame = innerRect;
-    self.rimMask.lineWidth = self.strokeWidth;
-    UIBezierPath *innerPath = [UIBezierPath bezierPathWithRoundedRect:CGRectMake(0.0, 0.0, innerRect.size.width, innerRect.size.height)
-                                                   cornerRadius:innerRadius];
-    self.rimMask.path = innerPath.CGPath;
-}
-
 @end
 
 @implementation LGButtonView
@@ -261,6 +56,14 @@ static UIImage *CreateRadialGlowImage(CGFloat diameter) {
     containerMask.path = maskPath.CGPath;
     self.backgroundContainer.layer.mask = containerMask;
 
+    self.blurView = [[LGAdjustableBlurView alloc] initWithFrame:self.backgroundContainer.bounds blurRadius:blurRadius];
+    self.blurView.qualityScale = 0.35;
+    self.blurView.clipsToBounds = NO;
+    self.blurView.layer.cornerRadius = radius;
+    self.blurView.layer.cornerCurve = curve;
+    self.blurView.tag = 996;
+    [self.backgroundContainer addSubview:self.blurView];
+
     self.lgView = [[LGLiveBackdropView alloc] initWithFrame:self.backgroundContainer.bounds
                                                   groupName:nil
                                                  filterType:LGFilterTypeForHostPrefix(@"PrefsButton")];
@@ -281,14 +84,33 @@ static UIImage *CreateRadialGlowImage(CGFloat diameter) {
     }];
     [self.backgroundContainer addSubview:self.darkTintView];
 
-    CGFloat glowDiameter = MAX(self.bounds.size.width, self.bounds.size.height) * 3.2;
+    CGFloat glowDiameter = MAX(self.bounds.size.width, self.bounds.size.height) * 2.2;
     self.innerGlowView = [[UIImageView alloc] initWithImage:CreateRadialGlowImage(glowDiameter)];
     self.innerGlowView.frame = CGRectMake(0, 0, glowDiameter, glowDiameter);
     self.innerGlowView.center = CGPointMake(self.bounds.size.width / 2.0, self.bounds.size.height / 2.0);
     self.innerGlowView.alpha = 0.0;
-    self.innerGlowView.layer.compositingFilter = @"plusL";
     [self.backgroundContainer addSubview:self.innerGlowView];
 
+    self.specularRimLayer = [CAGradientLayer layer];
+    self.specularRimLayer.frame = self.backgroundContainer.bounds;
+    self.specularRimLayer.startPoint = CGPointMake(0, 0);
+    self.specularRimLayer.endPoint = CGPointMake(1, 1);
+    self.specularRimLayer.colors = @[(id)[UIColor colorWithWhite:1.0 alpha:0.75].CGColor,
+                                     (id)[UIColor colorWithWhite:1.0 alpha:0.0].CGColor,
+                                     (id)[UIColor colorWithWhite:1.0 alpha:0.0].CGColor,
+                                     (id)[UIColor colorWithWhite:1.0 alpha:0.75].CGColor];
+    self.specularRimLayer.locations = @[@0.0, @0.28, @0.72, @1.0];
+
+    self.specularMaskLayer = [CAShapeLayer layer];
+    UIBezierPath *rimPath = isCircular ?
+        [UIBezierPath bezierPathWithOvalInRect:self.backgroundContainer.bounds] :
+        [UIBezierPath bezierPathWithRoundedRect:self.backgroundContainer.bounds cornerRadius:radius];
+    self.specularMaskLayer.path = rimPath.CGPath;
+    self.specularMaskLayer.fillColor = [UIColor clearColor].CGColor;
+    self.specularMaskLayer.strokeColor = [UIColor whiteColor].CGColor;
+    self.specularMaskLayer.lineWidth = 1.2;
+    self.specularRimLayer.mask = self.specularMaskLayer;
+    [self.backgroundContainer.layer addSublayer:self.specularRimLayer];
 }
 
 - (instancetype)initWithFrame:(CGRect)frame symbolName:(NSString *)symbolName blurRadius:(CGFloat)blurRadius {
@@ -336,6 +158,7 @@ static UIImage *CreateRadialGlowImage(CGFloat diameter) {
 
 - (void)refreshGlass {
     [self.lgView applyFilters];
+    [self.blurView applyFilters];
 }
 
 - (void)didMoveToSuperview {
@@ -358,10 +181,15 @@ static UIImage *CreateRadialGlowImage(CGFloat diameter) {
 
     if (self.backgroundContainer && !CGSizeEqualToSize(self.backgroundContainer.bounds.size, self.bounds.size)) {
         self.backgroundContainer.frame = self.bounds;
+        self.blurView.frame = self.backgroundContainer.bounds;
         self.lgView.frame = self.backgroundContainer.bounds;
         self.darkTintView.frame = self.backgroundContainer.bounds;
+        self.specularRimLayer.frame = self.backgroundContainer.bounds;
+
         self.backgroundContainer.layer.cornerRadius = radius;
         self.backgroundContainer.layer.cornerCurve = curve;
+        self.blurView.layer.cornerRadius = radius;
+        self.blurView.layer.cornerCurve = curve;
         self.lgView.layer.cornerRadius = radius;
         self.lgView.layer.cornerCurve = curve;
         self.darkTintView.layer.cornerRadius = radius;
@@ -374,6 +202,9 @@ static UIImage *CreateRadialGlowImage(CGFloat diameter) {
 
     if (self.backgroundContainer.layer.mask && [self.backgroundContainer.layer.mask isKindOfClass:[CAShapeLayer class]]) {
         ((CAShapeLayer *)self.backgroundContainer.layer.mask).path = path.CGPath;
+    }
+    if (self.specularMaskLayer) {
+        self.specularMaskLayer.path = path.CGPath;
     }
     if (self.menuAnchorButton) {
         self.menuAnchorButton.frame = self.bounds;
@@ -609,7 +440,7 @@ static void LGDumpButtonHierarchy(UIView *view) {
         CGAffineTransform pressTransform = CGAffineTransformMakeScale(1.10, 1.10);
         [self updateShapeWithTransform:pressTransform shiftX:0 shiftY:0];
         self.innerGlowView.transform = CGAffineTransformIdentity;
-        self.innerGlowView.alpha = 0.22;
+        self.innerGlowView.alpha = 0.90;
     } completion:nil];
 }
 
@@ -657,7 +488,7 @@ static void LGDumpButtonHierarchy(UIView *view) {
 
     CGFloat scaleSpread = 1.0 + MIN(dist * 0.006, 0.45);
     self.innerGlowView.transform = CGAffineTransformMakeScale(scaleSpread, scaleSpread);
-    self.innerGlowView.alpha = MIN(0.22 + (dist * 0.0004), 0.30);
+    self.innerGlowView.alpha = MIN(0.90 + (dist * 0.003), 1.0);
 }
 
 - (void)handleTouchEnded {

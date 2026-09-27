@@ -7,6 +7,7 @@
 #import "../LiquidAssPrefs/LGPrefsLiquidSwitch.h"
 #import "../Shared/LGSharedSupport.h"
 #import "../Shared/LGLiveBackdropView.h"
+#import "../Shared/LGFramework.h"
 #import "../Shared/LGGlassKit.h"
 #import "../Shared/LGLiquidMotion.h"
 #import "../Shared/LGLensRectState.h"
@@ -16,11 +17,13 @@ static void *kLGSettingsSliderOverlayKey = &kLGSettingsSliderOverlayKey;
 static void *kLGSettingsSliderVisualHostKey = &kLGSettingsSliderVisualHostKey;
 static void *kLGSettingsSegmentGlassKey = &kLGSettingsSegmentGlassKey;
 static void *kLGSettingsTopFadeKey = &kLGSettingsTopFadeKey;
+static void *kLGSettingsBarButtonGlassKey = &kLGSettingsBarButtonGlassKey;
 static void *kLGSettingsBackButtonKey = &kLGSettingsBackButtonKey;
+static void *kLGSettingsStockBackStateKey = &kLGSettingsStockBackStateKey;
+static BOOL gLGApplyingSettingsBarButtonTransform = NO;
 static void *kLGLiquidAssEntryFooterKey = &kLGLiquidAssEntryFooterKey;
 static void *kLGSettingsBarBackgroundStateKey =
     &kLGSettingsBarBackgroundStateKey;
-static void *kLGSettingsStockBackStateKey = &kLGSettingsStockBackStateKey;
 static BOOL gLGSettingsControlsEnabled = NO;
 static BOOL gLGSwitchControlsEnabled = NO;
 static BOOL gLGSliderControlsEnabled = NO;
@@ -193,14 +196,26 @@ static void LGRecordControlsDiagnostic(LGControlsDiagnosticKind kind,
             [self.layer setValue:NSUUID.UUID.UUIDString forKey:@"groupName"];
         Class filterClass = NSClassFromString(@"CAFilter");
         SEL selector = NSSelectorFromString(@"filterWithName:");
+        if (![filterClass respondsToSelector:selector]) {
+            selector = NSSelectorFromString(@"filterWithType:");
+        }
         id filter = filterClass && [filterClass respondsToSelector:selector]
             ? ((id (*)(Class, SEL, NSString *))objc_msgSend)
                 (filterClass, selector, @"gaussianBlur") : nil;
+        id satFilter = filterClass && [filterClass respondsToSelector:selector]
+            ? ((id (*)(Class, SEL, NSString *))objc_msgSend)
+                (filterClass, selector, @"colorSaturate") : nil;
+        NSMutableArray *filters = [NSMutableArray array];
         if (filter) {
             [filter setValue:@(_lgBlurRadius) forKey:@"inputRadius"];
             [filter setValue:@YES forKey:@"inputNormalizeEdges"];
-            self.layer.filters = @[ filter ];
+            [filters addObject:filter];
         }
+        if (satFilter) {
+            [satFilter setValue:@1.80 forKey:@"inputAmount"];
+            [filters addObject:satFilter];
+        }
+        self.layer.filters = filters;
     } @catch (__unused NSException *exception) {}
 }
 @end
@@ -320,127 +335,11 @@ static UIColor *LGDetailTintBaseColor(void) {
 }
 @end
 
-@interface LGSettingsBackButton : UIControl
-@property (nonatomic, strong) LGLiveBackdropView *glass;
-@property (nonatomic, strong) UIImageView *glyph;
-@property (nonatomic, weak) UINavigationController *navigationController;
-@property (nonatomic, weak) UIView *stockButton;
-@property (nonatomic, strong) UIViewPropertyAnimator *pressAnimator;
-@end
-
-static void LGSettingsPerformSoftHaptic(void) {
-    if (@available(iOS 13.0, *)) {
-        UIImpactFeedbackGenerator *generator =
-            [[UIImpactFeedbackGenerator alloc] initWithStyle:UIImpactFeedbackStyleSoft];
-        [generator prepare];
-        [generator impactOccurred];
-    }
-}
-
-@implementation LGSettingsBackButton
-- (instancetype)initWithFrame:(CGRect)frame {
-    self = [super initWithFrame:frame];
-    if (!self) return nil;
-    self.backgroundColor = UIColor.clearColor;
-    _glass = LGCreateRegisteredGlass(self.bounds, nil, @"PrefsButton");
-    _glass.userInteractionEnabled = NO;
-    [self addSubview:_glass];
-    UIImageSymbolConfiguration *configuration =
-        [UIImageSymbolConfiguration configurationWithPointSize:24
-                                                        weight:UIImageSymbolWeightRegular];
-    _glyph = [[UIImageView alloc] initWithImage:
-        [UIImage systemImageNamed:@"chevron.left" withConfiguration:configuration]];
-    _glyph.tintColor = UIColor.labelColor;
-    _glyph.contentMode = UIViewContentModeCenter;
-    _glyph.userInteractionEnabled = NO;
-    [self addSubview:_glyph];
-    [self addTarget:self action:@selector(lg_touchDown)
-        forControlEvents:UIControlEventTouchDown];
-    [self addTarget:self action:@selector(lg_pop) forControlEvents:UIControlEventTouchUpInside];
-    return self;
-}
-- (void)layoutSubviews {
-    [super layoutSubviews];
-    self.glass.frame = self.bounds;
-    CGFloat radius = CGRectGetHeight(self.bounds) * 0.5;
-    self.layer.cornerRadius = radius;
-    self.layer.cornerCurve = kCACornerCurveContinuous;
-    self.glass.layer.cornerRadius = radius;
-    self.glass.layer.cornerCurve = kCACornerCurveContinuous;
-    self.glass.layer.masksToBounds = YES;
-    self.glyph.frame = self.bounds;
-}
-- (void)lg_touchDown {
-    LGSettingsPerformSoftHaptic();
-}
-- (void)setHighlighted:(BOOL)highlighted {
-    [super setHighlighted:highlighted];
-    CALayer *presentation = self.layer.presentationLayer;
-    if (presentation) self.transform = CATransform3DGetAffineTransform(presentation.transform);
-    [self.pressAnimator stopAnimation:YES];
-    CGFloat mass = 0.8;
-    CGFloat stiffness = 300.0;
-    CGFloat damping = highlighted ? 18.0 : 12.0;
-    CGFloat velocity = highlighted ? 0.5 : 1.0;
-    CGFloat duration = highlighted ? 0.3 : 0.5;
-    UISpringTimingParameters *timing = [[UISpringTimingParameters alloc]
-        initWithMass:mass stiffness:stiffness damping:damping
-        initialVelocity:CGVectorMake(velocity, velocity)];
-    self.pressAnimator = [[UIViewPropertyAnimator alloc]
-        initWithDuration:duration timingParameters:timing];
-    __weak typeof(self) weakSelf = self;
-    [self.pressAnimator addAnimations:^{
-        __strong typeof(weakSelf) strongSelf = weakSelf;
-
-        strongSelf.transform = highlighted ? CGAffineTransformMakeScale(1.16, 1.16)
-                                            : CGAffineTransformIdentity;
-    }];
-    [self.pressAnimator startAnimation];
-}
-- (BOOL)lg_invokeView:(UIView *)view {
-    if ([view isKindOfClass:UIControl.class] &&
-        ((UIControl *)view).allTargets.count > 0) {
-        [(UIControl *)view sendActionsForControlEvents:UIControlEventTouchUpInside];
-        return YES;
-    }
-    for (UIGestureRecognizer *recognizer in view.gestureRecognizers) {
-        NSArray *targets = nil;
-        @try { targets = [recognizer valueForKey:@"_targets"]; }
-        @catch (__unused NSException *exception) {}
-        for (id targetAction in targets) {
-            id target = nil;
-            NSString *actionName = nil;
-            @try {
-                target = [targetAction valueForKey:@"target"];
-                actionName = [targetAction valueForKey:@"action"];
-            } @catch (__unused NSException *exception) {}
-            SEL action = NSSelectorFromString(actionName);
-            if (target && action && [target respondsToSelector:action]) {
-                ((void (*)(id, SEL, id))objc_msgSend)(target, action, recognizer);
-                return YES;
-            }
-        }
-    }
-    for (UIView *subview in view.subviews)
-        if ([self lg_invokeView:subview]) return YES;
-    return NO;
-}
-- (void)lg_pop {
-    if (![self lg_invokeView:self.stockButton])
-        [self.navigationController popViewControllerAnimated:YES];
-}
-@end
-
 static BOOL LGSettingsFeatureEnabled(void) {
     id settings = LGGlassPreferenceValue(@"SettingsControls.Enabled");
 
     return ![settings respondsToSelector:@selector(boolValue)] ||
            [settings boolValue];
-}
-
-static BOOL LGGlobalControlPreferenceEnabled(NSString *key, BOOL fallback) {
-    id value = LGGlassPreferenceValue(key);
-    return [value respondsToSelector:@selector(boolValue)] ? [value boolValue] : fallback;
 }
 
 static BOOL LGProcessIsExcludedFromGlobalControls(void) {
@@ -452,12 +351,9 @@ static BOOL LGProcessIsExcludedFromGlobalControls(void) {
 static void LGRefreshGlobalControlEnablement(void) {
     gLGSettingsControlsEnabled = LGSettingsFeatureEnabled();
     BOOL allowed = gLGSettingsControlsEnabled && !LGProcessIsExcludedFromGlobalControls();
-    gLGSwitchControlsEnabled = allowed &&
-        LGGlobalControlPreferenceEnabled(@"GlobalControls.Switches.Enabled", YES);
-    gLGSliderControlsEnabled = allowed &&
-        LGGlobalControlPreferenceEnabled(@"GlobalControls.Sliders.Enabled", NO);
-    gLGSegmentControlsEnabled = allowed &&
-        LGGlobalControlPreferenceEnabled(@"GlobalControls.Segmented.Enabled", NO);
+    gLGSwitchControlsEnabled = allowed && lgHostEnabled(@"PrefsSwitch");
+    gLGSliderControlsEnabled = allowed && lgHostEnabled(@"PrefsSlider");
+    gLGSegmentControlsEnabled = allowed && lgHostEnabled(@"PrefsSegment");
 }
 
 static BOOL LGInsideLiquidAssPrefs(UIView *view) {
@@ -618,6 +514,15 @@ static void LGHideStockControlContents(UIView *control, UIView *except) {
         if (subview != except) subview.alpha = 0.0;
 }
 
+static void LGRemoveSettingsSwitchOverlay(UISwitch *owner) {
+    UIView *overlay = objc_getAssociatedObject(owner, kLGSettingsSwitchOverlayKey);
+    if (!overlay) return;
+    [overlay removeFromSuperview];
+    objc_setAssociatedObject(owner, kLGSettingsSwitchOverlayKey, nil,
+                             OBJC_ASSOCIATION_ASSIGN);
+    for (UIView *subview in owner.subviews) subview.alpha = 1.0;
+}
+
 static BOOL LGViewTreeHasSpeechRateEndpoints(UIView *root);
 
 static UISlider *LGSettingsSliderOwnerForVisualElement(UIView *view) {
@@ -693,7 +598,11 @@ static CGRect LGSettingsSliderOverlayFrame(UISlider *owner, UIView *container) {
 }
 
 static void LGInstallSettingsSwitch(UISwitch *owner) {
-    if (!gLGSwitchControlsEnabled || !owner.window ||
+    if (!gLGSwitchControlsEnabled) {
+        LGRemoveSettingsSwitchOverlay(owner);
+        return;
+    }
+    if (!owner.window ||
         [owner isKindOfClass:LGPrefsLiquidSwitch.class] ||
         LGInsideLiquidAssPrefs(owner)) return;
 
@@ -1050,7 +959,16 @@ static void LGSegmentPresentGlass(UISegmentedControl *control,
                                   LGSegmentMotionState *state);
 
 static void LGInstallSettingsSegment(UISegmentedControl *control) {
-    if (!gLGSegmentControlsEnabled || !control.window ||
+    if (!gLGSegmentControlsEnabled) {
+        UIView *glass = objc_getAssociatedObject(control, kLGSettingsSegmentGlassKey);
+        [glass removeFromSuperview];
+        objc_setAssociatedObject(control, kLGSettingsSegmentGlassKey, nil,
+                                 OBJC_ASSOCIATION_ASSIGN);
+        UIImageView *indicator = LGSegmentSelectionIndicator(control);
+        indicator.alpha = 1.0;
+        return;
+    }
+    if (!control.window ||
         LGInsideLiquidAssPrefs(control)) return;
 
     UIImageView *indicator = LGSegmentSelectionIndicator(control);
@@ -1269,7 +1187,11 @@ static void LGSegmentAttachGesture(UISegmentedControl *control) {
 }
 
 static void LGInstallSettingsSlider(UISlider *owner) {
-    if (!gLGSliderControlsEnabled || !owner.window ||
+    if (!gLGSliderControlsEnabled) {
+        LGRemoveSettingsSliderOverlay(owner);
+        return;
+    }
+    if (!owner.window ||
         [owner isKindOfClass:LGPrefsLiquidSlider.class] ||
         LGInsideLiquidAssPrefs(owner)) return;
     if (!LGSliderUsesStockArtwork(owner)) {
@@ -1384,10 +1306,224 @@ static void LGInstallSettingsSlider(UISlider *owner) {
     [container bringSubviewToFront:overlay];
 }
 
-static UIView *LGDescendantNamed(UIView *root, NSString *name) {
+static UILabel *LGSettingsBarButtonLabel(UIView *view) {
+    if ([view isKindOfClass:UILabel.class] && ((UILabel *)view).text.length)
+        return (UILabel *)view;
+    for (UIView *subview in view.subviews) {
+        UILabel *label = LGSettingsBarButtonLabel(subview);
+        if (label) return label;
+    }
+    return nil;
+}
+
+static void LGColorSettingsBarButtonLabels(UIView *view) {
+    if ([NSStringFromClass(view.class) isEqualToString:@"_UIModernBarButton"] &&
+        [view isKindOfClass:UIButton.class]) {
+        UIButton *button = (UIButton *)view;
+        button.tintColor = UIColor.labelColor;
+        [button setTitleColor:UIColor.labelColor forState:UIControlStateNormal];
+        [button setTitleColor:UIColor.labelColor forState:UIControlStateHighlighted];
+    }
+    if ([view isKindOfClass:UILabel.class])
+        ((UILabel *)view).textColor = UIColor.labelColor;
+    for (UIView *subview in view.subviews)
+        LGColorSettingsBarButtonLabels(subview);
+}
+
+@interface LGSettingsBarButtonPhysicsView : LGButtonView
+@property (nonatomic, weak) UIView *nativeButton;
+@property (nonatomic, assign) CGPoint nativeContentOffset;
+@end
+
+@implementation LGSettingsBarButtonPhysicsView
+- (void)unclipHierarchy {
+    self.clipsToBounds = NO;
+    self.layer.masksToBounds = NO;
+    for (UIView *view = self.superview; view; view = view.superview) {
+        view.clipsToBounds = NO;
+        view.layer.masksToBounds = NO;
+    }
+}
+
+- (void)lg_updateGlowAtPoint:(CGPoint)point
+                      shiftX:(CGFloat)shiftX
+                      shiftY:(CGFloat)shiftY
+                       width:(CGFloat)width
+                      height:(CGFloat)height {
+    CGFloat deltaX = point.x - shiftX - CGRectGetMidX(self.bounds);
+    CGFloat deltaY = point.y - shiftY - CGRectGetMidY(self.bounds);
+    CGFloat radius = MAX(0.0, height * 0.5 - 2.0);
+    CGFloat straightWidth = MAX(0.0, width * 0.5 - height * 0.5);
+    deltaY = MAX(-radius, MIN(deltaY, radius));
+    CGFloat capX = deltaX < -straightWidth ? deltaX + straightWidth
+                 : deltaX > straightWidth ? deltaX - straightWidth : 0.0;
+    if (capX != 0.0) {
+        CGFloat distance = hypot(capX, deltaY);
+        if (distance > radius && distance > 0.001) {
+            deltaX = copysign(straightWidth, deltaX) + capX / distance * radius;
+            deltaY = deltaY / distance * radius;
+        }
+    }
+    CGPoint target = CGPointMake(width * 0.5 + deltaX, height * 0.5 + deltaY);
+    CGPoint current = self.innerGlowView.center;
+    self.innerGlowView.center = CGPointMake(current.x + (target.x - current.x) * 0.20,
+                                            current.y + (target.y - current.y) * 0.20);
+}
+
+- (void)updateGlowPositionWithTouchPoint:(CGPoint)point
+                                  shiftX:(CGFloat)shiftX
+                                  shiftY:(CGFloat)shiftY {
+    [self lg_updateGlowAtPoint:point shiftX:shiftX shiftY:shiftY
+                         width:CGRectGetWidth(self.bounds) * 1.10
+                        height:CGRectGetHeight(self.bounds) * 1.10];
+}
+
+- (void)lg_transformNativeContent:(CGAffineTransform)transform {
+    transform.tx += self.nativeContentOffset.x;
+    transform.ty += self.nativeContentOffset.y;
+    gLGApplyingSettingsBarButtonTransform = YES;
+    NSMutableArray<UIView *> *views = [NSMutableArray arrayWithArray:self.nativeButton.subviews];
+    while (views.count) {
+        UIView *view = views.lastObject;
+        [views removeLastObject];
+        if ([view isKindOfClass:UILabel.class] || [view isKindOfClass:UIImageView.class])
+            view.transform = transform;
+        else
+            [views addObjectsFromArray:view.subviews];
+    }
+    gLGApplyingSettingsBarButtonTransform = NO;
+}
+
+- (void)handleTouchDownAtPoint:(CGPoint)point {
+    [super handleTouchDownAtPoint:point];
+    [UIView animateWithDuration:0.18 delay:0
+        usingSpringWithDamping:0.55 initialSpringVelocity:1.2
+        options:UIViewAnimationOptionAllowUserInteraction |
+                UIViewAnimationOptionBeginFromCurrentState animations:^{
+        [self lg_transformNativeContent:CGAffineTransformMakeScale(1.10, 1.10)];
+    } completion:nil];
+}
+
+- (void)handleTouchMovedToPoint:(CGPoint)point {
+    if (!self.isPressed) {
+        [self handleTouchDownAtPoint:point];
+        return;
+    }
+
+    CGFloat deltaX = point.x - self.touchStartPoint.x;
+    CGFloat deltaY = point.y - self.touchStartPoint.y;
+    CGFloat distance = hypot(deltaX, deltaY);
+    CGFloat effect = 50.0 * (1.0 - 1.0 / (distance * 0.025 + 1.0));
+    CGFloat effectX = distance > 0.001 ? deltaX / distance * effect : 0.0;
+    CGFloat effectY = distance > 0.001 ? deltaY / distance * effect : 0.0;
+    CGFloat stretchX = 1.10 * (1.0 + fabs(effectX) * 0.003);
+    CGFloat stretchY = 1.10 * (1.0 + fabs(effectY) * 0.006);
+    CGFloat shiftX = effectX * 0.5;
+    CGFloat shiftY = effectY * 0.5;
+
+    CGAffineTransform transform = CGAffineTransformConcat(
+        CGAffineTransformMakeTranslation(shiftX, shiftY),
+        CGAffineTransformMakeScale(stretchX, stretchY));
+    self.backgroundContainer.transform = transform;
+    [self lg_transformNativeContent:transform];
+    [self lg_updateGlowAtPoint:point shiftX:shiftX shiftY:shiftY
+                         width:CGRectGetWidth(self.bounds) * stretchX
+                        height:CGRectGetHeight(self.bounds) * stretchY];
+    CGFloat glowScale = 1.0 + MIN(distance * 0.002, 0.18);
+    self.innerGlowView.transform = CGAffineTransformMakeScale(glowScale, glowScale);
+    self.innerGlowView.alpha = MIN(0.22 + distance * 0.0004, 0.30);
+}
+
+- (void)handleTouchEnded {
+    [super handleTouchEnded];
+    [UIView animateWithDuration:0.52 delay:0
+        usingSpringWithDamping:0.44 initialSpringVelocity:1.8
+        options:UIViewAnimationOptionAllowUserInteraction |
+                UIViewAnimationOptionBeginFromCurrentState animations:^{
+        [self lg_transformNativeContent:CGAffineTransformIdentity];
+    } completion:nil];
+}
+@end
+
+@interface LGSettingsBackButton : UIControl
+@property (nonatomic, strong) LGButtonView *visual;
+@property (nonatomic, weak) UINavigationController *navigationController;
+@property (nonatomic, weak) UIView *stockButton;
+@end
+
+@implementation LGSettingsBackButton
+- (instancetype)initWithFrame:(CGRect)frame {
+    self = [super initWithFrame:frame];
+    if (!self) return nil;
+    self.backgroundColor = UIColor.clearColor;
+    _visual = [[LGButtonView alloc] initWithFrame:self.bounds
+                                       symbolName:@"chevron.left"
+                                       blurRadius:2.0];
+    _visual.userInteractionEnabled = NO;
+    [self addSubview:_visual];
+    [self addTarget:self action:@selector(lg_pop)
+        forControlEvents:UIControlEventTouchUpInside];
+    return self;
+}
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    [self.visual updateLayoutWithFrame:self.bounds];
+}
+- (BOOL)beginTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
+    BOOL tracking = [super beginTrackingWithTouch:touch withEvent:event];
+    if (tracking) [self.visual handleTouchDownAtPoint:[touch locationInView:self.visual]];
+    return tracking;
+}
+- (BOOL)continueTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
+    BOOL tracking = [super continueTrackingWithTouch:touch withEvent:event];
+    [self.visual handleTouchMovedToPoint:[touch locationInView:self.visual]];
+    return tracking;
+}
+- (void)endTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
+    [self.visual handleTouchEnded];
+    [super endTrackingWithTouch:touch withEvent:event];
+}
+- (void)cancelTrackingWithEvent:(UIEvent *)event {
+    [self.visual handleTouchEnded];
+    [super cancelTrackingWithEvent:event];
+}
+- (BOOL)lg_invokeView:(UIView *)view {
+    if ([view isKindOfClass:UIControl.class] && ((UIControl *)view).allTargets.count) {
+        [(UIControl *)view sendActionsForControlEvents:UIControlEventTouchUpInside];
+        return YES;
+    }
+    for (UIGestureRecognizer *recognizer in view.gestureRecognizers) {
+        NSArray *targets = nil;
+        @try { targets = [recognizer valueForKey:@"_targets"]; }
+        @catch (__unused NSException *exception) {}
+        for (id targetAction in targets) {
+            id target = nil;
+            NSString *actionName = nil;
+            @try {
+                target = [targetAction valueForKey:@"target"];
+                actionName = [targetAction valueForKey:@"action"];
+            } @catch (__unused NSException *exception) {}
+            SEL action = NSSelectorFromString(actionName);
+            if (target && action && [target respondsToSelector:action]) {
+                ((void (*)(id, SEL, id))objc_msgSend)(target, action, recognizer);
+                return YES;
+            }
+        }
+    }
+    for (UIView *subview in view.subviews)
+        if ([self lg_invokeView:subview]) return YES;
+    return NO;
+}
+- (void)lg_pop {
+    if (![self lg_invokeView:self.stockButton])
+        [self.navigationController popViewControllerAnimated:YES];
+}
+@end
+
+static UIView *LGSettingsDescendantNamed(UIView *root, NSString *name) {
     for (UIView *subview in root.subviews) {
         if ([NSStringFromClass(subview.class) isEqualToString:name]) return subview;
-        UIView *found = LGDescendantNamed(subview, name);
+        UIView *found = LGSettingsDescendantNamed(subview, name);
         if (found) return found;
     }
     return nil;
@@ -1408,8 +1544,7 @@ static void LGUpdateSettingsBackButton(UINavigationBar *bar) {
     if (!gLGSettingsControlsEnabled) {
         UIView *stock = installed.stockButton;
         NSDictionary *original = stock
-            ? objc_getAssociatedObject(stock, kLGSettingsStockBackStateKey)
-            : nil;
+            ? objc_getAssociatedObject(stock, kLGSettingsStockBackStateKey) : nil;
         if (stock && original) {
             stock.hidden = [original[@"hidden"] boolValue];
             stock.alpha = [original[@"alpha"] doubleValue];
@@ -1423,13 +1558,14 @@ static void LGUpdateSettingsBackButton(UINavigationBar *bar) {
         return;
     }
     UINavigationController *navigation = nil;
-    for (UIResponder *r = bar; r; r = r.nextResponder)
-        if ([r isKindOfClass:UINavigationController.class]) {
-            navigation = (UINavigationController *)r;
+    for (UIResponder *responder = bar; responder; responder = responder.nextResponder) {
+        if ([responder isKindOfClass:UINavigationController.class]) {
+            navigation = (UINavigationController *)responder;
             break;
         }
+    }
     if (!navigation || navigation.viewControllers.count <= 1 || !bar.backItem) {
-        [objc_getAssociatedObject(content, kLGSettingsBackButtonKey) removeFromSuperview];
+        [installed removeFromSuperview];
         objc_setAssociatedObject(content, kLGSettingsBackButtonKey, nil,
                                  OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         return;
@@ -1439,7 +1575,7 @@ static void LGUpdateSettingsBackButton(UINavigationBar *bar) {
         [[NSBundle bundleForClass:navigation.class].bundleIdentifier
             isEqualToString:@"dylv.liquidassprefs"] ||
         [navigationClass hasPrefix:@"LG"]) {
-        [objc_getAssociatedObject(content, kLGSettingsBackButtonKey) removeFromSuperview];
+        [installed removeFromSuperview];
         objc_setAssociatedObject(content, kLGSettingsBackButtonKey, nil,
                                  OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         return;
@@ -1447,13 +1583,12 @@ static void LGUpdateSettingsBackButton(UINavigationBar *bar) {
     UIView *stock = nil;
     for (UIView *candidate in content.subviews)
         if ([NSStringFromClass(candidate.class) isEqualToString:@"_UIButtonBarButton"] &&
-            LGDescendantNamed(candidate, @"_UIBackButtonMaskView")) {
+            LGSettingsDescendantNamed(candidate, @"_UIBackButtonMaskView")) {
             stock = candidate;
             break;
         }
     if (!stock) return;
-    LGSettingsBackButton *button =
-        objc_getAssociatedObject(content, kLGSettingsBackButtonKey);
+    LGSettingsBackButton *button = installed;
     if (!button) {
         button = [[LGSettingsBackButton alloc] initWithFrame:CGRectMake(16, 0, 44, 44)];
         [content addSubview:button];
@@ -1470,14 +1605,94 @@ static void LGUpdateSettingsBackButton(UINavigationBar *bar) {
               @"interaction": @(stock.userInteractionEnabled)},
             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
-
-    CGFloat leading = MAX(16.0, bar.safeAreaInsets.left + 8.0);
-    CGFloat y = floor(CGRectGetMidY(content.bounds) - 22.0);
-    button.frame = CGRectMake(floor(leading), y, 44.0, 44.0);
+    button.frame = CGRectMake(floor(MAX(16.0, bar.safeAreaInsets.left + 8.0)),
+                              floor(CGRectGetMidY(content.bounds) - 22.0), 44.0, 44.0);
     stock.hidden = YES;
     stock.alpha = 0.0;
     stock.userInteractionEnabled = NO;
     [content bringSubviewToFront:button];
+}
+
+static CGRect LGSettingsBarButtonGlassFrame(UIView *button) {
+    CGFloat height = 44.0;
+    CGFloat padding = 16.0;
+    BOOL onLeft = CGRectGetMidX([button convertRect:button.bounds toView:button.window]) <
+                  CGRectGetMidX(button.window.bounds);
+    UINavigationBar *bar = nil;
+    for (UIView *view = button.superview; view; view = view.superview)
+        if ([view isKindOfClass:UINavigationBar.class]) {
+            bar = (UINavigationBar *)view;
+            break;
+        }
+    CGRect margins = bar ? [bar convertRect:bar.layoutMarginsGuide.layoutFrame toView:button]
+                         : button.bounds;
+    CGFloat width = CGRectGetWidth(button.bounds) + padding;
+    CGFloat originX = onLeft ? CGRectGetMinX(margins) : CGRectGetMaxX(margins) - width;
+    return CGRectMake(originX,
+                      (CGRectGetHeight(button.bounds) - height) * 0.5,
+                      width, height);
+}
+
+static CGRect LGSettingsBarButtonContentFrame(UIView *button) {
+    CGRect content = CGRectNull;
+    for (UIView *view in button.subviews)
+        if ([NSStringFromClass(view.class) isEqualToString:@"_UIModernBarButton"]) {
+            CGRect stableFrame = CGRectMake(view.center.x - CGRectGetWidth(view.bounds) * 0.5,
+                                            view.center.y - CGRectGetHeight(view.bounds) * 0.5,
+                                            CGRectGetWidth(view.bounds),
+                                            CGRectGetHeight(view.bounds));
+            content = CGRectUnion(content, stableFrame);
+        }
+    return content;
+}
+
+static void LGCenterSettingsBarButtonContent(UIView *button,
+                                             LGSettingsBarButtonPhysicsView *glass,
+                                             CGRect content) {
+    glass.nativeContentOffset = CGPointMake(CGRectGetMidX(glass.frame) - CGRectGetMidX(content),
+                                            CGRectGetMidY(glass.frame) - CGRectGetMidY(content));
+    if (!glass.isPressed)
+        [glass lg_transformNativeContent:CGAffineTransformIdentity];
+}
+
+static void LGUpdateSettingsBarButtonGlass(UIView *button) {
+    LGSettingsBarButtonPhysicsView *glass =
+        objc_getAssociatedObject(button, kLGSettingsBarButtonGlassKey);
+    if (!gLGSettingsControlsEnabled ||
+        LGSettingsDescendantNamed(button, @"_UIBackButtonMaskView") ||
+        !LGSettingsBarButtonLabel(button)) {
+        [glass removeFromSuperview];
+        objc_setAssociatedObject(button, kLGSettingsBarButtonGlassKey, nil,
+                                 OBJC_ASSOCIATION_ASSIGN);
+        return;
+    }
+    LGColorSettingsBarButtonLabels(button);
+    CGRect content = LGSettingsBarButtonContentFrame(button);
+    if (CGRectIsNull(content) ||
+        !CGRectContainsRect(CGRectInset(button.bounds, -0.5, -0.5), content))
+        return;
+    if ([button respondsToSelector:NSSelectorFromString(@"setBackButtonMaskEnabled:")])
+        ((void (*)(id, SEL, BOOL))objc_msgSend)(button,
+            NSSelectorFromString(@"setBackButtonMaskEnabled:"), NO);
+    CGRect frame = LGSettingsBarButtonGlassFrame(button);
+    if (!glass) {
+        glass = [[LGSettingsBarButtonPhysicsView alloc]
+            initWithFrame:frame
+                    title:@""
+               blurRadius:2.0];
+        glass.nativeButton = button;
+        glass.userInteractionEnabled = NO;
+        glass.layer.zPosition = -1.0;
+        [button insertSubview:glass atIndex:0];
+        objc_setAssociatedObject(button, kLGSettingsBarButtonGlassKey, glass,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    }
+    if (glass.isPressed)
+        glass.frame = frame;
+    else
+        [glass updateLayoutWithFrame:frame];
+    LGCenterSettingsBarButtonContent(button, glass, content);
+    [button sendSubviewToBack:glass];
 }
 
 static BOOL LGViewTreeHasSpeechRateEndpoints(UIView *root) {
@@ -2431,6 +2646,108 @@ static void LGUpdateSettingsSidebar(UIView *container) {
 }
 %end
 
+%hook _UIButtonBarButton
+- (void)setBackButtonMaskEnabled:(BOOL)enabled {
+    %orig(gLGSettingsControlsEnabled &&
+          objc_getAssociatedObject(self, kLGSettingsBarButtonGlassKey) ? NO : enabled);
+}
+- (void)didMoveToWindow {
+    %orig;
+    LGUpdateSettingsBarButtonGlass((UIView *)self);
+}
+- (void)layoutSubviews {
+    %orig;
+    LGUpdateSettingsBarButtonGlass((UIView *)self);
+}
+- (BOOL)beginTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
+    BOOL tracking = %orig;
+    LGSettingsBarButtonPhysicsView *glass =
+        objc_getAssociatedObject(self, kLGSettingsBarButtonGlassKey);
+    if (tracking && glass) {
+        CGPoint point = [touch locationInView:(UIView *)self];
+        [glass handleTouchDownAtPoint:[(UIView *)self convertPoint:point toView:glass]];
+    }
+    return tracking;
+}
+- (BOOL)continueTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
+    BOOL tracking = %orig;
+    LGSettingsBarButtonPhysicsView *glass =
+        objc_getAssociatedObject(self, kLGSettingsBarButtonGlassKey);
+    if (glass) {
+        CGPoint point = [touch locationInView:(UIView *)self];
+        [glass handleTouchMovedToPoint:[(UIView *)self convertPoint:point toView:glass]];
+    }
+    return tracking;
+}
+- (void)endTrackingWithTouch:(UITouch *)touch withEvent:(UIEvent *)event {
+    %orig;
+    [(LGSettingsBarButtonPhysicsView *)objc_getAssociatedObject(
+        self, kLGSettingsBarButtonGlassKey) handleTouchEnded];
+}
+- (void)cancelTrackingWithEvent:(UIEvent *)event {
+    %orig;
+    [(LGSettingsBarButtonPhysicsView *)objc_getAssociatedObject(
+        self, kLGSettingsBarButtonGlassKey) handleTouchEnded];
+}
+%end
+
+%hook UIButtonLabel
+- (void)setTransform:(CGAffineTransform)transform {
+    if (!gLGApplyingSettingsBarButtonTransform) {
+        for (UIView *parent = ((UIView *)self).superview; parent; parent = parent.superview) {
+            LGSettingsBarButtonPhysicsView *glass =
+                objc_getAssociatedObject(parent, kLGSettingsBarButtonGlassKey);
+            if (glass && !glass.isPressed) {
+                transform.tx += glass.nativeContentOffset.x;
+                transform.ty += glass.nativeContentOffset.y;
+                break;
+            }
+        }
+    }
+    %orig(transform);
+}
+%end
+
+%hook _UIModernBarButton
+- (void)layoutSubviews {
+    %orig;
+    for (UIView *parent = ((UIView *)self).superview; parent; parent = parent.superview) {
+        LGSettingsBarButtonPhysicsView *glass =
+            objc_getAssociatedObject(parent, kLGSettingsBarButtonGlassKey);
+        if (glass && !glass.isPressed) {
+            [glass lg_transformNativeContent:CGAffineTransformIdentity];
+            break;
+        }
+    }
+}
+- (void)setAttributedTitle:(NSAttributedString *)title forState:(UIControlState)state {
+    UIView *view = (UIView *)self;
+    BOOL insideGlassButton = NO;
+    for (UIView *parent = view.superview; parent; parent = parent.superview)
+        if (objc_getAssociatedObject(parent, kLGSettingsBarButtonGlassKey)) {
+            insideGlassButton = YES;
+            break;
+        }
+    if (!insideGlassButton || !title.length) {
+        %orig;
+        return;
+    }
+    NSMutableAttributedString *fixed = [title mutableCopy];
+    [fixed addAttribute:NSForegroundColorAttributeName value:UIColor.labelColor
+                  range:NSMakeRange(0, fixed.length)];
+    %orig(fixed, state);
+}
+- (void)setTintColor:(UIColor *)color {
+    UIView *view = (UIView *)self;
+    for (UIView *parent = view.superview; parent; parent = parent.superview)
+        if (objc_getAssociatedObject(parent, kLGSettingsBarButtonGlassKey)) {
+            %orig(UIColor.labelColor);
+            return;
+        }
+    %orig;
+}
+%end
+
 %hook PSTableCell
 - (CGSize)sizeThatFits:(CGSize)size {
     CGSize result = %orig;
@@ -2605,6 +2922,21 @@ static void LGUpdateSettingsSidebar(UIView *container) {
 
 %end
 
+static void LGRefreshVisibleGlobalControlsInView(UIView *view) {
+    if ([view isKindOfClass:UISwitch.class] &&
+        ![view isKindOfClass:LGPrefsLiquidSwitch.class]) {
+        LGInstallSettingsSwitch((UISwitch *)view);
+    } else if ([view isKindOfClass:UISegmentedControl.class]) {
+        LGInstallSettingsSegment((UISegmentedControl *)view);
+    } else if ([view isKindOfClass:UISlider.class] &&
+               ![view isKindOfClass:LGPrefsLiquidSlider.class]) {
+        LGInstallSettingsSlider((UISlider *)view);
+    }
+    for (UIView *subview in view.subviews) {
+        LGRefreshVisibleGlobalControlsInView(subview);
+    }
+}
+
 %ctor {
     if (LGIsExcludedSystemProcess()) return;
     NSString *bundleIdentifier = NSBundle.mainBundle.bundleIdentifier ?: @"";
@@ -2626,6 +2958,9 @@ static void LGUpdateSettingsSidebar(UIView *container) {
 
     lgObservePreferenceReload(^{
         LGRefreshGlobalControlEnablement();
+        for (UIWindow *window in UIApplication.sharedApplication.windows) {
+            LGRefreshVisibleGlobalControlsInView(window);
+        }
         LGLog(@"global controls reload bundle=%s enabled=%d",
                    bundleIdentifier.UTF8String, gLGSettingsControlsEnabled);
     });

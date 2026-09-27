@@ -10,7 +10,6 @@ static const CGFloat   kCtxCornerRadiusOffset = 5.0;
 static const CGFloat   kCtxRowInset      = 16.0;
 static const CGFloat   kCtxIconSize      = 20.0;
 static const CGFloat   kCtxIconSpacing   = 12.0;
-static const CGFloat   kCtxContentInset  = 8.0;
 static const CGFloat   kCtxRowHeight     = 40.0;
 static void *kCtxGlassKey         = &kCtxGlassKey;
 static void *kCtxGapOriginalBgKey = &kCtxGapOriginalBgKey;
@@ -26,6 +25,7 @@ static void *kCtxCellPillKey = &kCtxCellPillKey;
 static void *kCtxProbePendingKey = &kCtxProbePendingKey;
 static void *kCtxGlassProbeKey = &kCtxGlassProbeKey;
 static void *kCtxHierarchyProbeKey = &kCtxHierarchyProbeKey;
+static void *kCtxOpenProbeKey = &kCtxOpenProbeKey;
 
 @interface _UIContextMenuListView : UIView
 @property (nonatomic, readonly) UICollectionView *collectionView;
@@ -186,32 +186,18 @@ static void setBackdropHiddenInEffectView(UIView *effectView) {
     }
 }
 
-static BOOL contextMenuNeedsLegacyInsetWorkaround(void) {
-    return NSProcessInfo.processInfo.operatingSystemVersion.majorVersion < 16;
-}
-
-static CGRect contextMenuVisualBounds(UIView *listView) {
-    CGRect bounds = listView.bounds;
-    if (!contextMenuNeedsLegacyInsetWorkaround()) return bounds;
-    UICollectionView *collection = (UICollectionView *)findDescendantMatching(listView, ^BOOL(UIView *view) {
-        return [view isKindOfClass:UICollectionView.class];
-    });
-    if (collection) {
-        CGRect frame = [collection.superview convertRect:collection.frame toView:listView];
-        bounds.size.height = MAX(CGRectGetHeight(bounds), CGRectGetMaxY(frame) + kCtxContentInset);
-    }
-    return bounds;
+static NSUInteger ctxGlassCount(UIView *root) {
+    NSUInteger count = [root isKindOfClass:LGLiveBackdropView.class] ? 1 : 0;
+    for (UIView *subview in root.subviews) count += ctxGlassCount(subview);
+    return count;
 }
 
 static void injectGlassIntoContextEffectView(UIVisualEffectView *fx, int attempt) {
     if (!lgHostEnabled(@"ContextMenu")) return;
     if (isExactClass(fx.superview, @"_UIContextMenuHeaderView")) return;
-    UIView *container = fx.contentView;
-    if (contextMenuNeedsLegacyInsetWorkaround()) {
-        container = fx;
-        while (container && !isExactClass(container, @"_UIContextMenuListView")) container = container.superview;
-        if (!container) return;
-    }
+    UIView *container = fx;
+    while (container && !isExactClass(container, @"_UIContextMenuListView")) container = container.superview;
+    if (!container) return;
     // springboard sometimes gives us zero-ish bounds for a bit
     if (CGRectGetWidth(container.bounds) < 10.0 || CGRectGetHeight(container.bounds) < 10.0) {
         if (attempt >= 10) return;
@@ -222,37 +208,38 @@ static void injectGlassIntoContextEffectView(UIVisualEffectView *fx, int attempt
         return;
     }
 
-    LGLiveBackdropView *glass = objc_getAssociatedObject(fx, kCtxGlassKey);
+    LGLiveBackdropView *glass = objc_getAssociatedObject(container, kCtxGlassKey);
+    BOOL created = !glass;
     if (!glass) {
         glass = LGCreateRegisteredGlass(container.bounds, nil, @"ContextMenu");
         if (!glass) return;
         glass.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
         [container insertSubview:glass atIndex:0];
-        objc_setAssociatedObject(fx, kCtxGlassKey, glass, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(container, kCtxGlassKey, glass, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
     if (glass.superview != container) [container insertSubview:glass atIndex:0];
-    glass.frame                = contextMenuVisualBounds(container);
+    glass.frame                = container.bounds;
     glass.layer.cornerRadius   = contextMenuCornerRadius();
     glass.layer.cornerCurve    = kCACornerCurveContinuous;
     glass.layer.masksToBounds  = YES;
-    [glass applyFilters];
+    if (created) [glass applyFilters];
     if (LGDebugLoggingEnabled() && ![objc_getAssociatedObject(fx, kCtxGlassProbeKey) boolValue]) {
         objc_setAssociatedObject(fx, kCtxGlassProbeKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
             objc_setAssociatedObject(fx, kCtxGlassProbeKey, nil, OBJC_ASSOCIATION_ASSIGN);
-            LGLog(@"[ContextMenu glass probe] fx=%@ frame=%@ bounds=%@ content=%@ glass=%@ container=%@ containerBounds=%@",
-                  NSStringFromClass(fx.class), NSStringFromCGRect(fx.frame), NSStringFromCGRect(fx.bounds),
-                  NSStringFromCGRect(container.frame), NSStringFromCGRect(glass.frame),
-                  NSStringFromClass(container.superview.class), NSStringFromCGRect(container.superview.bounds));
+            LGLog(@"[ContextMenu glass] fx=%p %@ created=%d host=%p %@ hostFrame=%@ hostBounds=%@ glass=%p glassFrame=%@ glassCount=%lu",
+                  fx, NSStringFromClass(fx.class), created, container, NSStringFromClass(container.class),
+                  NSStringFromCGRect(container.frame), NSStringFromCGRect(container.bounds), glass,
+                  NSStringFromCGRect(glass.frame), (unsigned long)ctxGlassCount(container));
         });
     }
 }
 
-static void removeGlassFromContextEffectView(UIVisualEffectView *fx) {
-    LGLiveBackdropView *glass = objc_getAssociatedObject(fx, kCtxGlassKey);
+static void removeGlassFromContextListView(UIView *listView) {
+    LGLiveBackdropView *glass = objc_getAssociatedObject(listView, kCtxGlassKey);
     if (!glass) return;
     [glass removeFromSuperview];
-    objc_setAssociatedObject(fx, kCtxGlassKey, nil, OBJC_ASSOCIATION_ASSIGN);
+    objc_setAssociatedObject(listView, kCtxGlassKey, nil, OBJC_ASSOCIATION_ASSIGN);
 }
 
 static void relayoutContextMenuCellContent(UIView *contentView) {
@@ -414,7 +401,7 @@ static LGCtxMenuGlowView *contextMenuGlowView(UIView *listView) {
         if (background && background.superview == listView) [listView insertSubview:glow aboveSubview:background];
         else [listView insertSubview:glow atIndex:0];
     }
-    glow.frame = contextMenuVisualBounds(listView);
+    glow.frame = listView.bounds;
     glow.layer.cornerRadius = contextMenuCornerRadius();
     return glow;
 }
@@ -535,6 +522,43 @@ static void ctxScheduleLayoutProbe(UIView *listView) {
     });
 }
 
+static void ctxLogOpenSnapshot(UIView *listView, NSString *phase) {
+    UICollectionView *collection = (UICollectionView *)findDescendantMatching(listView, ^BOOL(UIView *view) {
+        return [view isKindOfClass:UICollectionView.class];
+    });
+    if (!collection.window) return;
+    NSArray<UICollectionViewCell *> *cells = collection.visibleCells;
+    CGRect cellUnion = CGRectNull;
+    for (UICollectionViewCell *cell in cells)
+        cellUnion = CGRectIsNull(cellUnion) ? cell.frame : CGRectUnion(cellUnion, cell.frame);
+    LGLog(@"[ContextMenu open %@] list=%p frame=%@ bounds=%@ safe=%@ margins=%@ glassCount=%lu collection=%p frame=%@ bounds=%@ content=%@ layoutContent=%@ inset=%@ adjusted=%@ safe=%@ cells=%lu cellUnion=%@ super=%p %@ superFrame=%@ superBounds=%@",
+          phase, listView, NSStringFromCGRect(listView.frame), NSStringFromCGRect(listView.bounds),
+          NSStringFromUIEdgeInsets(listView.safeAreaInsets), NSStringFromUIEdgeInsets(listView.layoutMargins),
+          (unsigned long)ctxGlassCount(listView), collection, NSStringFromCGRect(collection.frame),
+          NSStringFromCGRect(collection.bounds), NSStringFromCGSize(collection.contentSize),
+          NSStringFromCGSize(collection.collectionViewLayout.collectionViewContentSize),
+          NSStringFromUIEdgeInsets(collection.contentInset),
+          NSStringFromUIEdgeInsets(collection.adjustedContentInset),
+          NSStringFromUIEdgeInsets(collection.safeAreaInsets), (unsigned long)cells.count,
+          NSStringFromCGRect(cellUnion), collection.superview, NSStringFromClass(collection.superview.class),
+          NSStringFromCGRect(collection.superview.frame), NSStringFromCGRect(collection.superview.bounds));
+}
+
+static void ctxProbeMenuOpen(UIView *listView) {
+    if (!LGDebugLoggingEnabled() || objc_getAssociatedObject(listView, kCtxOpenProbeKey)) return;
+    objc_setAssociatedObject(listView, kCtxOpenProbeKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    LGLog(@"[ContextMenu open] list=%p window=%p frame=%@", listView, listView.window,
+          NSStringFromCGRect(listView.frame));
+    ctxLogOpenSnapshot(listView, @"now");
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        ctxLogOpenSnapshot(listView, @"100ms");
+    });
+    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.3 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+        ctxLogOpenSnapshot(listView, @"300ms");
+        ctxDumpHierarchy(listView);
+    });
+}
+
 #pragma mark - hooks
 
 %group LGContextMenuHooks
@@ -543,7 +567,7 @@ static void ctxScheduleLayoutProbe(UIView *listView) {
 - (void)didMoveToWindow {
     %orig;
     UIView *self_ = (UIView *)self;
-    if (!self_.window) { removeGlassFromContextEffectView((UIVisualEffectView *)self_); return; }
+    if (!self_.window) return;
     if (!isInsideContextMenu(self_)) return;
     if (!lgHostEnabled(@"ContextMenu")) { restoreContextMenuSubtree(self_); return; }
     setBackdropHiddenInEffectView(self_);
@@ -600,13 +624,14 @@ static void ctxScheduleLayoutProbe(UIView *listView) {
 %end
 
 %hook _UIContextMenuListView
-- (CGSize)preferredContentSizeWithinContainerSize:(CGSize)containerSize {
-    CGSize size = %orig;
-    if (lgHostEnabled(@"ContextMenu")) {
-        size.width = MIN(containerSize.width, size.width + kCtxContentInset * 2.0);
-        size.height = MIN(containerSize.height, size.height + kCtxContentInset * 2.0);
+- (void)didMoveToWindow {
+    %orig;
+    UIView *self_ = (UIView *)self;
+    if (!self_.window) {
+        removeGlassFromContextListView(self_);
+        return;
     }
-    return size;
+    if (lgHostEnabled(@"ContextMenu")) ctxProbeMenuOpen(self_);
 }
 - (void)didAddSubview:(UIView *)subview {
     %orig;
@@ -619,24 +644,6 @@ static void ctxScheduleLayoutProbe(UIView *listView) {
 - (void)layoutSubviews {
     %orig;
     if (lgHostEnabled(@"ContextMenu")) {
-        UICollectionView *collection = (UICollectionView *)findDescendantMatching(
-            (UIView *)self, ^BOOL(UIView *view) {
-                return [view isKindOfClass:UICollectionView.class];
-        });
-        if (collection) {
-            CGRect frame = collection.frame;
-            frame.origin.x = kCtxContentInset;
-            frame.origin.y = kCtxContentInset;
-            frame.size.width = MAX(0.0, CGRectGetWidth(collection.superview.bounds) -
-                                         kCtxContentInset * 2.0);
-            collection.frame = frame;
-            if (contextMenuNeedsLegacyInsetWorkaround()) {
-                for (UIView *view = collection.superview; view && view != (UIView *)self; view = view.superview) {
-                    ctxRememberVisualState(view);
-                    view.clipsToBounds = NO;
-                }
-            }
-        }
         styleContextMenuListSubviews((UIView *)self);
         contextMenuGlowView((UIView *)self);
         ctxScheduleLayoutProbe((UIView *)self);

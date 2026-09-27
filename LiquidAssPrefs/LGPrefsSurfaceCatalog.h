@@ -31,6 +31,7 @@ FOUNDATION_EXPORT NSString * const LGPrefsSurfaceVolumeHUD;
 FOUNDATION_EXPORT NSString * const LGPrefsSurfacePillHUD;
 FOUNDATION_EXPORT NSString * const LGPrefsSurfaceGlobalControls;
 FOUNDATION_EXPORT NSString * const LGPrefsSurfaceMoreOptions;
+FOUNDATION_EXPORT NSString * const LGPrefsSurfaceCustomViews;
 FOUNDATION_EXPORT NSString * const LGPrefsSurfaceSettings;
 
 BOOL LGPrefsSurfaceIsKnown(NSString *identifier);
