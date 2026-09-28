@@ -1020,6 +1020,17 @@ NSArray<NSDictionary *> *LGMoreOptionsItems(void) {
         @"subtitle": LGLocalized(@"prefs.custom_views.subtitle"),
         @"surface_identifier": LGPrefsSurfaceCustomViews,
     }];
+    [items addObject:LGMenuSetting(@"Renderer.BackdropBlurMethod",
+                                  LGLocalized(@"prefs.control.backdrop_blur_method"),
+                                  LGLocalized(@"prefs.subtitle.backdrop_blur_method"),
+                                  @"adjustable",
+                                  @[
+                                      @{ @"value": @"adjustable", @"title": LGLocalized(@"prefs.blur_method.adjustable") },
+                                      @{ @"value": @"saturated", @"title": LGLocalized(@"prefs.blur_method.saturated") },
+                                      @{ @"value": @"frosted", @"title": LGLocalized(@"prefs.blur_method.frosted") },
+                                      @{ @"value": @"material", @"title": LGLocalized(@"prefs.blur_method.material") },
+                                      @{ @"value": @"none", @"title": LGLocalized(@"prefs.blur_method.none") },
+                                  ])];
     [items addObject:LGSliderSetting(@"Renderer.FresnelGlareStrength",
                                      LGLocalized(@"prefs.control.fresnel_glare"),
                                      LGLocalized(@"prefs.subtitle.fresnel_glare"),
@@ -1031,19 +1042,6 @@ NSArray<NSDictionary *> *LGMoreOptionsItems(void) {
                         YES),
         @"Global.Enabled",
         @NO)];
-    [items addObject:LGSectionSetting(LGLocalized(@"prefs.section.motion_highlights.title"),
-                                      LGLocalized(@"prefs.section.motion_highlights.subtitle"))];
-    [items addObject:LGSwitchSetting(@"Specular.Motion.Enabled",
-                                     LGLocalized(@"prefs.control.motion_highlights"),
-                                     LGLocalized(@"prefs.subtitle.motion_highlights"),
-                                     NO)];
-    [items addObject:LGSliderSetting(@"Specular.Motion.Sensitivity",
-                                     LGLocalized(@"prefs.control.motion_highlights_sensitivity"),
-                                     LGLocalized(@"prefs.subtitle.motion_highlights_sensitivity"),
-                                     2.0,
-                                     0.0,
-                                     8.0,
-                                     2)];
     [items addObject:LGSectionSetting(@"", @"")];
     [items addObject:LGSectionSetting(LGLocalized(@"prefs.misc.import_export_section.title"),
                                       LGLocalized(@"prefs.misc.import_export_section.subtitle"))];

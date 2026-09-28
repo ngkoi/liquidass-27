@@ -146,6 +146,13 @@
 "prefs.misc.prefs_settings.subtitle" = "Language, version details, donate, etc.";
 "prefs.misc.options_section.title" = "Extra stuff";
 "prefs.misc.options_section.subtitle" = "Experimental features and other stuff.";
+"prefs.control.backdrop_blur_method" = "Backdrop Blur Method";
+"prefs.subtitle.backdrop_blur_method" = "Select blur methods";
+"prefs.blur_method.adjustable" = "A";
+"prefs.blur_method.saturated" = "B";
+"prefs.blur_method.frosted" = "C";
+"prefs.blur_method.material" = "D";
+"prefs.blur_method.none" = "No blur";
 "prefs.control.fresnel_glare" = "Fresnel Glare";
 "prefs.subtitle.fresnel_glare" = "Controls the edge glare added by the glass shader.";
 "prefs.misc.rwb_third_party.title" = "RWB list";

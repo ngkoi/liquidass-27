@@ -18,7 +18,7 @@
     self = [super initWithFrame:frame];
     if (self) {
         _cornerRadius = cornerRadius;
-        _strokeWidth = 0.50;
+        _strokeWidth = 0.575;
         _topSpecularOpacity = 0.60;
         _bottomSpecularOpacity = 0.30;
 
@@ -65,7 +65,7 @@
         self.darkEdgeMask = [CAShapeLayer layer];
         self.darkEdgeMask.fillColor = [UIColor clearColor].CGColor;
         self.darkEdgeMask.strokeColor = [UIColor whiteColor].CGColor;
-        self.darkEdgeMask.lineWidth = 0.525;
+        self.darkEdgeMask.lineWidth = 0.604;
         self.darkEdgeRim.mask = self.darkEdgeMask;
         [self.layer addSublayer:self.darkEdgeRim];
 
@@ -109,7 +109,7 @@
     self.darkEdgeMask.path = outerPath.CGPath;
 
     // Inner specular rim
-    CGFloat specularInset = 0.85;
+    CGFloat specularInset = 0.90;
     CGRect innerRect = CGRectInset(self.bounds, specularInset, specularInset);
     if (CGRectGetWidth(innerRect) <= 0.0 || CGRectGetHeight(innerRect) <= 0.0) {
         innerRect = self.bounds;

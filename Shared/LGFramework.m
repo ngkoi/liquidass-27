@@ -86,6 +86,212 @@
 
 @end
 
+@implementation LGSaturatedBlurView
+
++ (Class)layerClass {
+    return NSClassFromString(@"CABackdropLayer") ?: CALayer.class;
+}
+
+- (instancetype)initWithFrame:(CGRect)frame blurRadius:(CGFloat)radius {
+    self = [super initWithFrame:frame];
+    if (!self) return nil;
+    _blurRadius = radius;
+    self.userInteractionEnabled = NO;
+    self.backgroundColor = UIColor.clearColor;
+    self.opaque = NO;
+    self.layer.cornerCurve = kCACornerCurveContinuous;
+    [self applyFilters];
+    return self;
+}
+
+- (void)setCornerRadius:(CGFloat)cornerRadius {
+    _cornerRadius = cornerRadius;
+    self.layer.cornerRadius = cornerRadius;
+    self.layer.cornerCurve = kCACornerCurveContinuous;
+    self.layer.masksToBounds = YES;
+}
+
+- (void)didMoveToWindow {
+    [super didMoveToWindow];
+    [self applyFilters];
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    [self applyFilters];
+}
+
+- (void)setBlurRadius:(CGFloat)blurRadius {
+    if (fabs(_blurRadius - blurRadius) <= 0.01) return;
+    _blurRadius = blurRadius;
+    [self applyFilters];
+}
+
+- (void)applyFilters {
+    CALayer *layer = self.layer;
+    Class backdropClass = NSClassFromString(@"CABackdropLayer");
+    if (!backdropClass || ![layer isKindOfClass:backdropClass]) return;
+
+    @try {
+        if (self.blurRadius <= 0.01) {
+            layer.filters = nil;
+            return;
+        }
+        [layer setValue:@NO forKey:@"layerUsesCoreImageFilters"];
+        [layer setValue:@YES forKey:@"windowServerAware"];
+        if (![layer valueForKey:@"groupName"]) {
+            [layer setValue:[NSString stringWithFormat:@"dylv.liquidglass.satblur.%p", self] forKey:@"groupName"];
+        }
+        Class filterClass = NSClassFromString(@"CAFilter");
+        if (!filterClass) return;
+        SEL selector = NSSelectorFromString(@"filterWithType:");
+        id blurFilter = ((id (*)(Class, SEL, NSString *))objc_msgSend)(filterClass, selector, @"gaussianBlur");
+        id satFilter = ((id (*)(Class, SEL, NSString *))objc_msgSend)(filterClass, selector, @"colorSaturate");
+        NSMutableArray *filters = [NSMutableArray array];
+        if (blurFilter) {
+            [blurFilter setValue:@(self.blurRadius) forKey:@"inputRadius"];
+            [blurFilter setValue:@YES forKey:@"inputNormalizeEdges"];
+            [filters addObject:blurFilter];
+        }
+        if (satFilter) {
+            [satFilter setValue:@1.80 forKey:@"inputAmount"];
+            [filters addObject:satFilter];
+        }
+        layer.filters = filters;
+    } @catch (__unused NSException *exception) {}
+}
+
+@end
+
+@implementation LGFrostedHazeBlurView {
+    UIView *_mistView;
+}
+
+- (instancetype)initWithFrame:(CGRect)frame blurRadius:(CGFloat)radius {
+    self = [super initWithFrame:frame blurRadius:radius];
+    if (self) {
+        _mistView = [[UIView alloc] initWithFrame:self.bounds];
+        _mistView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+        _mistView.userInteractionEnabled = NO;
+        _mistView.layer.cornerCurve = kCACornerCurveContinuous;
+        _mistView.layer.cornerRadius = self.layer.cornerRadius;
+        _mistView.layer.masksToBounds = YES;
+        [self updateMistColor];
+        [self addSubview:_mistView];
+    }
+    return self;
+}
+
+- (void)updateMistColor {
+    if (!_mistView) return;
+    BOOL isDark = YES;
+    if (@available(iOS 13.0, *)) {
+        isDark = (self.traitCollection.userInterfaceStyle != UIUserInterfaceStyleLight);
+    }
+    _mistView.backgroundColor = isDark
+        ? [UIColor colorWithWhite:1.0 alpha:0.07]
+        : [UIColor colorWithWhite:1.0 alpha:0.12];
+}
+
+- (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    [super traitCollectionDidChange:previousTraitCollection];
+    [self updateMistColor];
+}
+
+- (void)setCornerRadius:(CGFloat)cornerRadius {
+    [super setCornerRadius:cornerRadius];
+    if (_mistView) {
+        _mistView.layer.cornerRadius = cornerRadius;
+        _mistView.layer.cornerCurve = kCACornerCurveContinuous;
+        _mistView.layer.masksToBounds = YES;
+    }
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    if (_mistView) {
+        _mistView.frame = self.bounds;
+        _mistView.layer.cornerRadius = self.layer.cornerRadius;
+        _mistView.layer.cornerCurve = self.layer.cornerCurve;
+    }
+}
+
+@end
+
+@implementation LGFractionalMaterialBlurView {
+    UIVisualEffectView *_effectView;
+    UIViewPropertyAnimator *_animator;
+}
+
+- (instancetype)initWithFrame:(CGRect)frame blurRadius:(CGFloat)radius {
+    self = [super initWithFrame:frame];
+    if (!self) return nil;
+    _blurRadius = radius;
+    self.userInteractionEnabled = NO;
+    self.backgroundColor = UIColor.clearColor;
+    self.opaque = NO;
+    self.clipsToBounds = YES;
+    self.layer.cornerCurve = kCACornerCurveContinuous;
+
+    UIBlurEffect *blurEffect = nil;
+    if (@available(iOS 13.0, *)) {
+        blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleSystemUltraThinMaterialDark];
+    } else {
+        blurEffect = [UIBlurEffect effectWithStyle:UIBlurEffectStyleDark];
+    }
+    _effectView = [[UIVisualEffectView alloc] initWithEffect:nil];
+    _effectView.frame = self.bounds;
+    _effectView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
+    _effectView.userInteractionEnabled = NO;
+    _effectView.clipsToBounds = YES;
+    _effectView.layer.cornerCurve = kCACornerCurveContinuous;
+    [self addSubview:_effectView];
+
+    _animator = [[UIViewPropertyAnimator alloc] initWithDuration:1.0 curve:UIViewAnimationCurveLinear animations:^{
+        self->_effectView.effect = blurEffect;
+    }];
+    [self updateFraction];
+    return self;
+}
+
+- (void)updateFraction {
+    if (_animator) {
+        CGFloat fraction = fmin(0.35, fmax(0.06, _blurRadius / 25.0));
+        _animator.fractionComplete = fraction;
+    }
+}
+
+- (void)setCornerRadius:(CGFloat)cornerRadius {
+    _cornerRadius = cornerRadius;
+    self.layer.cornerRadius = cornerRadius;
+    _effectView.layer.cornerRadius = cornerRadius;
+    _effectView.layer.cornerCurve = kCACornerCurveContinuous;
+    self.layer.cornerCurve = kCACornerCurveContinuous;
+    self.layer.masksToBounds = YES;
+    _effectView.layer.masksToBounds = YES;
+}
+
+- (void)setBlurRadius:(CGFloat)blurRadius {
+    if (fabs(_blurRadius - blurRadius) <= 0.01) return;
+    _blurRadius = blurRadius;
+    [self updateFraction];
+}
+
+- (void)layoutSubviews {
+    [super layoutSubviews];
+    _effectView.frame = self.bounds;
+}
+
+- (void)dealloc {
+    if (_animator) {
+        [_animator stopAnimation:YES];
+        [_animator finishAnimationAtPosition:UIViewAnimatingPositionCurrent];
+        _animator = nil;
+    }
+}
+
+@end
+
 static UIImage *CreateRadialGlowImage(CGFloat diameter) {
     CGSize size = CGSizeMake(diameter, diameter);
     UIGraphicsBeginImageContextWithOptions(size, NO, 0.0);
@@ -133,7 +339,7 @@ static UIImage *CreateRadialGlowImage(CGFloat diameter) {
     self = [super initWithFrame:frame];
     if (self) {
         _cornerRadius = cornerRadius;
-        _strokeWidth = 0.50;
+        _strokeWidth = 0.575;
         _topSpecularOpacity = 0.60;
         _bottomSpecularOpacity = 0.30;
 
@@ -178,7 +384,7 @@ static UIImage *CreateRadialGlowImage(CGFloat diameter) {
         self.darkEdgeMask = [CAShapeLayer layer];
         self.darkEdgeMask.fillColor = UIColor.clearColor.CGColor;
         self.darkEdgeMask.strokeColor = UIColor.whiteColor.CGColor;
-        self.darkEdgeMask.lineWidth = 0.525;
+        self.darkEdgeMask.lineWidth = 0.604;
         self.darkEdgeRim.mask = self.darkEdgeMask;
         [self.layer addSublayer:self.darkEdgeRim];
 
@@ -219,7 +425,7 @@ static UIImage *CreateRadialGlowImage(CGFloat diameter) {
                                                    cornerRadius:self.cornerRadius];
     self.darkEdgeMask.path = outerPath.CGPath;
 
-    CGFloat specularInset = 0.85;
+    CGFloat specularInset = 0.90;
     CGRect innerRect = CGRectInset(self.bounds, specularInset, specularInset);
     if (CGRectGetWidth(innerRect) <= 0.0 || CGRectGetHeight(innerRect) <= 0.0) {
         innerRect = self.bounds;

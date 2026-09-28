@@ -494,7 +494,7 @@ float quartzGlassHighlight(float distanceFromEdge,
     float radial = saturate(distanceFromEdge / ringWidth);
     ring *= 1.0 - radial;
 
-    // iOS 27 Dual Rim: Primary Top Rim + Secondary Bottom Rim
+    // ios 27 rim
     float2 topLightDir = float2(0.0, -1.0);
     float topDirectional = saturate((dot(topLightDir, normal) - 0.15) / 0.85);
 
@@ -824,7 +824,6 @@ float4 liquidGlassPixel(texture2d<float, access::sample> src,
     if (distFromSide < bezel) {
         if (u.useGlyphMask > 2.5) {
             float t = saturate(distFromSide / max(bezel, 0.001));
-            // C1 smooth meniscus: zero slope at outer boundary and zero slope at bezel interior
             normDisp = 1.0 - t * t * (3.0 - 2.0 * t);
         } else {
             normDisp = quartzGlassEdgeProfile(distFromSide,

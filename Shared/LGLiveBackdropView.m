@@ -132,6 +132,7 @@ static void LGMotionPreferencesDidChange(CFNotificationCenterRef center, void *o
         LGRefreshMotionHighlights();
         for (LGLiveBackdropView *glass in sLGMotionGlasses.allObjects) {
             [glass invalidateSpecularCache];
+            [glass reapplyFilterForParameterReload];
         }
     });
 }
@@ -347,9 +348,9 @@ static void LGEnsureMotionHighlights(void) {
     LGRefreshMotionHighlights();
 }
 
-static const CGFloat kLGGlassEdgeWidth = 0.525;
-static const CGFloat kLGGlassSpecularWidth = 0.50;
-static const CGFloat kLGGlassSpecularInset = 0.85;
+static const CGFloat kLGGlassEdgeWidth = 0.604;
+static const CGFloat kLGGlassSpecularWidth = 0.575;
+static const CGFloat kLGGlassSpecularInset = 0.90;
 
 @implementation LGLiveBackdropView {
     NSString        *_lgGroupName;
@@ -515,11 +516,23 @@ static const CGFloat kLGGlassSpecularInset = 0.85;
         _nativeBlurView.frame = self.bounds;
         _nativeBlurView.layer.cornerRadius = self.layer.cornerRadius;
         _nativeBlurView.layer.cornerCurve = self.layer.cornerCurve;
+        if ([_nativeBlurView conformsToProtocol:@protocol(LGBackdropBlurProtocol)]) {
+            [(UIView<LGBackdropBlurProtocol> *)_nativeBlurView setCornerRadius:self.layer.cornerRadius];
+        }
     }
 }
 
+static NSString *LGCurrentBackdropBlurMethod(void) {
+    id val = LGGlassPreferenceValue(@"Renderer.BackdropBlurMethod");
+    if ([val isKindOfClass:[NSString class]] && [(NSString *)val length] > 0) {
+        return (NSString *)val;
+    }
+    return @"adjustable";
+}
+
 - (void)updateNativeBlurOverlayWithRadius:(CGFloat)radius {
-    if (radius <= 0.01) {
+    NSString *method = LGCurrentBackdropBlurMethod();
+    if ([method isEqualToString:@"none"] || radius <= 0.01) {
         if (_nativeBlurView) {
             [_nativeBlurView removeFromSuperview];
             _nativeBlurView = nil;
@@ -528,8 +541,23 @@ static const CGFloat kLGGlassSpecularInset = 0.85;
         return;
     }
 
+    Class expectedClass = [LGAdjustableBlurView class];
+    if ([method isEqualToString:@"saturated"]) {
+        expectedClass = [LGSaturatedBlurView class];
+    } else if ([method isEqualToString:@"frosted"]) {
+        expectedClass = [LGFrostedHazeBlurView class];
+    } else if ([method isEqualToString:@"material"]) {
+        expectedClass = [LGFractionalMaterialBlurView class];
+    }
+
+    if (_nativeBlurView && ![_nativeBlurView isMemberOfClass:expectedClass]) {
+        [_nativeBlurView removeFromSuperview];
+        _nativeBlurView = nil;
+        _nativeBlurRadius = 0.0;
+    }
+
     if (!_nativeBlurView) {
-        _nativeBlurView = [[LGAdjustableBlurView alloc] initWithFrame:self.bounds blurRadius:radius];
+        _nativeBlurView = [[expectedClass alloc] initWithFrame:self.bounds blurRadius:radius];
         _nativeBlurView.userInteractionEnabled = NO;
         [self insertSubview:_nativeBlurView atIndex:0];
     }
@@ -540,14 +568,13 @@ static const CGFloat kLGGlassSpecularInset = 0.85;
     _nativeBlurView.layer.cornerRadius = self.layer.cornerRadius;
     _nativeBlurView.layer.cornerCurve = self.layer.cornerCurve;
     _nativeBlurView.clipsToBounds = YES;
-    if ([_nativeBlurView respondsToSelector:@selector(setCornerRadius:)]) {
-        [(LGAdjustableBlurView *)_nativeBlurView setCornerRadius:self.layer.cornerRadius];
-    }
-    if (fabs(_nativeBlurRadius - radius) > 0.001) {
-        if ([_nativeBlurView respondsToSelector:@selector(setBlurRadius:)]) {
-            [(LGAdjustableBlurView *)_nativeBlurView setBlurRadius:radius];
+    if ([_nativeBlurView conformsToProtocol:@protocol(LGBackdropBlurProtocol)]) {
+        UIView<LGBackdropBlurProtocol> *blur = (UIView<LGBackdropBlurProtocol> *)_nativeBlurView;
+        [blur setCornerRadius:self.layer.cornerRadius];
+        if (fabs(_nativeBlurRadius - radius) > 0.001) {
+            [blur setBlurRadius:radius];
+            _nativeBlurRadius = radius;
         }
-        _nativeBlurRadius = radius;
     }
     [CATransaction commit];
 }

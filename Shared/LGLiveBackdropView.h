@@ -36,6 +36,7 @@ NSString *LGFilterTypeForHostPrefix(NSString *prefix);
 - (BOOL)lgFilterAttached;
 - (void)updateSpecular;
 - (void)invalidateSpecularCache;
+- (void)reapplyFilterForParameterReload;
 
 @property (nonatomic, assign) CGFloat lgBackdropZoom;
 @end
