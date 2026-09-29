@@ -4,6 +4,8 @@
 #import "../Shared/LGGlassKit.h"
 #import <objc/runtime.h>
 
+extern void LGClockSetPasscodeVisible(BOOL visible);
+
 static const CGFloat kPCActiveScale         = 1.16;
 static const CGFloat kPCActiveLightTint     = 0.66;
 static const CGFloat kPCRestDarkTint        = 0.12;
@@ -314,6 +316,7 @@ static void applyPasscodeSuppression(void) {
 
 static void updatePasscodeVisible(BOOL visible) {
     if (!lgHostEnabled(@"Passcode")) visible = NO;
+    LGClockSetPasscodeVisible(visible);
     if (sPasscodeVisible == visible) return;
     sPasscodeVisible = visible;
     dispatch_async(dispatch_get_main_queue(), ^{ applyPasscodeSuppression(); });

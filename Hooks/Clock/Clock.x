@@ -13,10 +13,15 @@ extern NSString *LG_prefString(NSString *key, NSString *fallback);
 static void *kLGClockViewKey = &kLGClockViewKey;
 static void *kLGClockSourceLabelKey = &kLGClockSourceLabelKey;
 static void *kLGClockSourceAlphaKey = &kLGClockSourceAlphaKey;
+static void *kLGClockVisibleSourceViewKey = &kLGClockVisibleSourceViewKey;
+static void *kLGClockVisibleSourceAlphaKey = &kLGClockVisibleSourceAlphaKey;
+static void *kLGClockVisibleSourceLayerOpacityKey = &kLGClockVisibleSourceLayerOpacityKey;
+static void *kLGClockVisibleSourceHiddenKey = &kLGClockVisibleSourceHiddenKey;
 static void *kLGClockApplyingDateKey = &kLGClockApplyingDateKey;
 static void *kLGClockOriginalDateKey = &kLGClockOriginalDateKey;
 static NSHashTable<UIView *> *sLGClockHosts;
 static __weak UIView *sLGClockActiveHost;
+static BOOL sLGClockPasscodeVisible;
 
 @interface CSCoverSheetView : UIView
 @end
@@ -78,7 +83,22 @@ static UILabel *LGClockSourceLabel(UIView *host) {
     return best;
 }
 
+static UIView *LGClockVisibleSourceViewForLabel(UILabel *label) {
+    if (!label) return nil;
+    for (UIView *view = label; view; view = view.superview) {
+        if ([NSStringFromClass(view.class) isEqualToString:@"SBUILegibilityLabel"])
+            return view;
+    }
+    return label;
+}
+
 static UIView *LGClockContainerForHost(UIView *host) {
+    if ([NSStringFromClass(host.class) isEqualToString:@"CSProminentTimeView"]) {
+        for (UIView *view = host.superview; view; view = view.superview) {
+            if ([NSStringFromClass(view.class) isEqualToString:@"CSProminentDisplayView"])
+                return view;
+        }
+    }
     UIView *container = host.superview;
     while (container.superview && ![container.superview isKindOfClass:UIWindow.class]) {
         NSString *name = NSStringFromClass(container.class);
@@ -102,6 +122,33 @@ static void LGClockRestoreSource(UIView *host) {
     if (source && alpha) source.alpha = alpha.doubleValue;
     objc_setAssociatedObject(source, kLGClockSourceAlphaKey, nil, OBJC_ASSOCIATION_ASSIGN);
     objc_setAssociatedObject(host, kLGClockSourceLabelKey, nil, OBJC_ASSOCIATION_ASSIGN);
+
+    UIView *visible = objc_getAssociatedObject(host, kLGClockVisibleSourceViewKey);
+    NSNumber *visibleAlpha = objc_getAssociatedObject(host, kLGClockVisibleSourceAlphaKey);
+    NSNumber *visibleOpacity = objc_getAssociatedObject(host, kLGClockVisibleSourceLayerOpacityKey);
+    NSNumber *visibleHidden = objc_getAssociatedObject(host, kLGClockVisibleSourceHiddenKey);
+    if (visible) {
+        visible.alpha = visibleAlpha ? visibleAlpha.doubleValue : 1.0;
+        visible.layer.opacity = visibleOpacity ? visibleOpacity.floatValue : 1.0f;
+        visible.hidden = visibleHidden ? visibleHidden.boolValue : NO;
+    }
+    objc_setAssociatedObject(host, kLGClockVisibleSourceViewKey, nil, OBJC_ASSOCIATION_ASSIGN);
+    objc_setAssociatedObject(host, kLGClockVisibleSourceAlphaKey, nil, OBJC_ASSOCIATION_ASSIGN);
+    objc_setAssociatedObject(host, kLGClockVisibleSourceLayerOpacityKey, nil, OBJC_ASSOCIATION_ASSIGN);
+    objc_setAssociatedObject(host, kLGClockVisibleSourceHiddenKey, nil, OBJC_ASSOCIATION_ASSIGN);
+}
+
+static void LGClockApplyPasscodeVisibility(SpatialLiquidClockView *clock) {
+    if (!clock) return;
+    clock.hidden = sLGClockPasscodeVisible;
+    clock.alpha = sLGClockPasscodeVisible ? 0.0 : 1.0;
+}
+
+void LGClockSetPasscodeVisible(BOOL visible) {
+    sLGClockPasscodeVisible = visible;
+    for (UIView *host in sLGClockHosts.allObjects) {
+        LGClockApplyPasscodeVisibility(objc_getAssociatedObject(host, kLGClockViewKey));
+    }
 }
 
 static void LGClockRemove(UIView *host) {
@@ -179,8 +226,27 @@ static void LGClockUpdateHost(UIView *host) {
         LGClockRestoreSource(host);
         objc_setAssociatedObject(source, kLGClockSourceAlphaKey, @(source.alpha), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
         objc_setAssociatedObject(host, kLGClockSourceLabelKey, source, OBJC_ASSOCIATION_ASSIGN);
+
+        UIView *visible = LGClockVisibleSourceViewForLabel(source);
+        if (visible && visible != source) {
+            objc_setAssociatedObject(host, kLGClockVisibleSourceViewKey, visible,
+                                     OBJC_ASSOCIATION_ASSIGN);
+            objc_setAssociatedObject(host, kLGClockVisibleSourceAlphaKey, @(visible.alpha),
+                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            objc_setAssociatedObject(host, kLGClockVisibleSourceLayerOpacityKey,
+                                     @(visible.layer.opacity), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            objc_setAssociatedObject(host, kLGClockVisibleSourceHiddenKey, @(visible.hidden),
+                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        }
     }
     source.alpha = 0.0;
+    UIView *visible = objc_getAssociatedObject(host, kLGClockVisibleSourceViewKey);
+    if (visible && visible != source) {
+        visible.hidden = YES;
+        visible.alpha = 0.0;
+        visible.layer.opacity = 0.0;
+    }
+    LGClockApplyPasscodeVisibility(clock);
 
     SpatialClockObstacleTracker *tracker = [SpatialClockObstacleTracker sharedTracker];
     tracker.clockView = clock;
