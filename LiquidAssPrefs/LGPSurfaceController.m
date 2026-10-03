@@ -484,6 +484,10 @@ static void LGRestartAssistiveTouchDaemon(void) {
     LGPresentTabBarAppList(self);
 }
 
+- (void)editNavigationBarExclusions {
+    LGPresentNavigationBarAppList(self);
+}
+
 - (void)documentPicker:(UIDocumentPickerViewController *)controller didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     (void)controller;
     NSURL *url = urls.firstObject;
@@ -1437,6 +1441,67 @@ static void LGRestartAssistiveTouchDaemon(void) {
     return body;
 }
 
+- (NSString *)segmentedSelectionValueForItem:(NSDictionary *)item {
+    id stored = LGReadPreferenceObject(item[@"key"], nil);
+    if ([stored isKindOfClass:NSString.class]) return stored;
+
+    NSString *legacyKey = item[@"legacy_key"];
+    id legacy = legacyKey.length ? LGReadPreferenceObject(legacyKey, nil) : nil;
+    if ([legacy isKindOfClass:NSNumber.class] && ![legacy boolValue]) return @"none";
+    return item[@"default"] ?: @"";
+}
+
+- (UIView *)segmentedControlBodyForItem:(NSDictionary *)item titleLabel:(UILabel *)titleLabel {
+    UIView *body = [[UIView alloc] initWithFrame:CGRectZero];
+    UIStackView *stack = [[UIStackView alloc] initWithFrame:CGRectZero];
+    stack.axis = UILayoutConstraintAxisVertical;
+    stack.spacing = 9.0;
+    stack.translatesAutoresizingMaskIntoConstraints = NO;
+    [body addSubview:stack];
+
+    NSArray<NSDictionary *> *choices = item[@"choices"] ?: @[];
+    NSMutableArray<NSString *> *titles = [NSMutableArray arrayWithCapacity:choices.count];
+    for (NSDictionary *choice in choices) [titles addObject:choice[@"title"] ?: @""];
+    UISegmentedControl *segmented = [[UISegmentedControl alloc] initWithItems:titles];
+    segmented.accessibilityIdentifier = item[@"key"];
+
+    NSString *currentValue = [self segmentedSelectionValueForItem:item];
+    for (NSUInteger index = 0; index < choices.count; index++) {
+        if ([choices[index][@"value"] isEqual:currentValue]) {
+            segmented.selectedSegmentIndex = (NSInteger)index;
+            break;
+        }
+    }
+
+    [segmented addAction:[UIAction actionWithHandler:^(__kindof UIAction *action) {
+        UISegmentedControl *sender = (UISegmentedControl *)action.sender;
+        NSInteger index = sender.selectedSegmentIndex;
+        if (index < 0 || index >= (NSInteger)choices.count) return;
+        NSString *value = choices[(NSUInteger)index][@"value"];
+        if (!value.length) return;
+        LGWritePreferenceObject(item[@"key"], value);
+        CFPreferencesSetAppValue((__bridge CFStringRef)item[@"key"],
+                                 (__bridge CFPropertyListRef)value,
+                                 (__bridge CFStringRef)LGPrefsDomain);
+        CFPreferencesAppSynchronize((__bridge CFStringRef)LGPrefsDomain);
+        notify_post(LGPrefsChangedNotificationCString);
+    }] forControlEvents:UIControlEventValueChanged];
+
+    [stack addArrangedSubview:titleLabel];
+    [stack addArrangedSubview:segmented];
+    NSString *subtitle = item[@"subtitle"];
+    if (subtitle.length) {
+        [stack addArrangedSubview:[self controlSubtitleLabelWithText:subtitle]];
+    }
+    [NSLayoutConstraint activateConstraints:@[
+        [stack.topAnchor constraintEqualToAnchor:body.topAnchor constant:13.0],
+        [stack.leadingAnchor constraintEqualToAnchor:body.leadingAnchor constant:14.0],
+        [stack.trailingAnchor constraintEqualToAnchor:body.trailingAnchor constant:-14.0],
+        [stack.bottomAnchor constraintEqualToAnchor:body.bottomAnchor constant:-13.0],
+    ]];
+    return body;
+}
+
 - (UIView *)switchControlBodyForItem:(NSDictionary *)item titleLabel:(UILabel *)titleLabel {
     UIView *body = [[UIView alloc] initWithFrame:CGRectZero];
     UIStackView *stack = [[UIStackView alloc] initWithFrame:CGRectZero];
@@ -1808,6 +1873,9 @@ static void LGRestartAssistiveTouchDaemon(void) {
     }
     if ([item[@"type"] isEqualToString:@"menu"]) {
         return [self menuControlBodyForItem:item titleLabel:titleLabel];
+    }
+    if ([item[@"type"] isEqualToString:@"segmented"]) {
+        return [self segmentedControlBodyForItem:item titleLabel:titleLabel];
     }
     if ([item[@"type"] isEqualToString:@"switch"]) {
         return [self switchControlBodyForItem:item titleLabel:titleLabel];

@@ -11,6 +11,9 @@
 "prefs.control.chromatic_dispersion" = "Chromatic Dispersion";
 "prefs.control.dispersion_strength" = "Dispersion Strength";
 "prefs.control.specular" = "Specular";
+"prefs.specular.none" = "None";
+"prefs.specular.border" = "Border";
+"prefs.specular.glass" = "Glass";
 "prefs.control.quality" = "Quality";
 "prefs.control.scale_budget" = "Scale Budget";
 "prefs.control.force_custom_scale" = "Force Custom Scale";
@@ -127,6 +130,7 @@
 "prefs.surface.coversheet.title" = "Cover Sheet Pull";
 "prefs.surface.keyboard.title" = "Keyboard";
 "prefs.surface.tab_bar.title" = "Tab Bar";
+"prefs.surface.navigation_bar.title" = "Navigation Bar";
 "prefs.surface.tab_bar_selection.title" = "Selection Lens";
 "prefs.surface.assistive_touch.title" = "AssistiveTouch";
 "prefs.surface.assistive_touch.subtitle" = "Customize AssistiveTouch liquid glass button";
@@ -177,6 +181,13 @@
 "prefs.global_controls.exclusions.subtitle" = "Choose apps that should keep their stock controls.";
 "prefs.tab_bar.exclusions.title" = "Excluded Apps";
 "prefs.tab_bar.exclusions.subtitle" = "Choose apps that should keep their stock tab bar.";
+"prefs.navigation_bar.exclusions.title" = "Excluded Apps";
+"prefs.navigation_bar.exclusions.subtitle" = "Choose apps that should keep their stock navigation bar.";
+"prefs.navigation_bar.top_fade.section" = "Top Fade";
+"prefs.navigation_bar.top_fade.title" = "Enabled";
+"prefs.navigation_bar.top_fade.subtitle" = "Adds a fading glass blur behind the navigation bar.";
+"prefs.navigation_bar.text_buttons.section" = "Text Buttons";
+"prefs.navigation_bar.text_buttons.subtitle" = "Customize the glass behind navigation bar buttons.";
 "prefs.global_controls.section.title" = "Custom Controls";
 "prefs.global_controls.section.subtitle" = "Choose which system controls are replaced across apps.";
 "prefs.global_controls.switches.title" = "Switches";

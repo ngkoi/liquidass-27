@@ -71,14 +71,43 @@ static CFStringRef const kLGParametersReloadedNotification =
     CFSTR("dylv.liquidglass/ParametersReloaded");
 static NSHashTable<LGLiveBackdropView *> *sLGAllGlasses;
 static BOOL sLGFilterRefreshSetup;
-static BOOL LGSpecularEnabledForFilterType(NSString *type) {
-    const LGHostDefinition *host = LGHostDefinitionForFilterType(type.UTF8String);
-    if (host == &kLGHostRegistry[LGHostIdentifierCoverSheet]) return NO;
-    if (host && host->specularOpacity <= 0.001f) return NO;
-    NSString *prefix = host ? [NSString stringWithUTF8String:host->preferencePrefix] : nil;
-    if (!prefix.length) return YES;
-    id value = LGGlassPreferenceValue([prefix stringByAppendingString:@".SpecularEnabled"]);
-    return [value isKindOfClass:[NSNumber class]] ? [value boolValue] : YES;
+
+LGGlassRimMode LGGlassRimModeForFilterType(NSString *filterType) {
+    if (!filterType.length) return LGGlassRimModeGlass;
+    const LGHostDefinition *host = LGHostDefinitionForFilterType(filterType.UTF8String);
+    if (!host) return LGGlassRimModeGlass;
+    NSString *prefix = [NSString stringWithUTF8String:host->preferencePrefix];
+    if (!prefix.length) return LGGlassRimModeGlass;
+    id mode = LGGlassPreferenceValue([prefix stringByAppendingString:@".SpecularMode"]);
+    if ([mode isKindOfClass:NSString.class]) {
+        if ([mode isEqualToString:@"none"]) return LGGlassRimModeNone;
+        if ([mode isEqualToString:@"border"]) return LGGlassRimModeBorder;
+        if ([mode isEqualToString:@"glass"]) return LGGlassRimModeGlass;
+    }
+    id legacy = LGGlassPreferenceValue([prefix stringByAppendingString:@".Specular.Mode"]);
+    if ([legacy isKindOfClass:NSString.class]) {
+        if ([legacy isEqualToString:@"none"]) return LGGlassRimModeNone;
+        if ([legacy isEqualToString:@"border"]) return LGGlassRimModeBorder;
+        if ([legacy isEqualToString:@"glass"]) return LGGlassRimModeGlass;
+    }
+    id enabled = LGGlassPreferenceValue([prefix stringByAppendingString:@".Specular.Enabled"]);
+    if ([enabled respondsToSelector:@selector(boolValue)]) {
+        return [enabled boolValue] ? LGGlassRimModeGlass : LGGlassRimModeNone;
+    }
+    id oldEnabled = LGGlassPreferenceValue([prefix stringByAppendingString:@".SpecularEnabled"]);
+    if ([oldEnabled respondsToSelector:@selector(boolValue)]) {
+        return [oldEnabled boolValue] ? LGGlassRimModeGlass : LGGlassRimModeNone;
+    }
+    if (host == &kLGHostRegistry[LGHostIdentifierCoverSheet]) return LGGlassRimModeNone;
+    if (host->specularOpacity <= 0.001f) return LGGlassRimModeNone;
+    return LGGlassRimModeGlass;
+}
+
+static BOOL LGUsesExternalBorderForFilterType(NSString *filterType) {
+    if (!filterType.length) return NO;
+    enum LGHostIdentifier identifier = LGHostIdentifierForFilterType(filterType.UTF8String);
+    return identifier == LGHostIdentifierCoverSheet ||
+           identifier == LGHostIdentifierKeyboard;
 }
 
 static NSHashTable<LGLiveBackdropView *> *sLGMotionGlasses;
@@ -626,16 +655,47 @@ static NSString *LGCurrentBackdropBlurMethod(void) {
     self.layer.cornerCurve = curve;
 
     NSNumber *override = self.lgSpecularEnabledOverride;
-    BOOL enabled = override ? override.boolValue
-                            : LGSpecularEnabledForFilterType(_lgFilterType);
+    LGGlassRimMode mode = override
+        ? (override.boolValue ? LGGlassRimModeGlass : LGGlassRimModeNone)
+        : LGGlassRimModeForFilterType(_lgFilterType);
     const LGHostDefinition *host = LGHostDefinitionForFilterType(_lgFilterType.UTF8String);
     if (host == &kLGHostRegistry[LGHostIdentifierClock]) return;
-    if (!enabled && !_specularLayer && !_darkEdgeLayer && !_fresnelGlareLayer) return;
+
+    if (mode == LGGlassRimModeNone ||
+        (mode == LGGlassRimModeBorder && LGUsesExternalBorderForFilterType(_lgFilterType))) {
+        if (_specularLayer) _specularLayer.hidden = YES;
+        if (_darkEdgeLayer) _darkEdgeLayer.hidden = YES;
+        if (_fresnelGlareLayer) _fresnelGlareLayer.hidden = YES;
+        if (_edge) _edge.hidden = YES;
+        return;
+    }
+
+    if (mode == LGGlassRimModeBorder) {
+        if (_specularLayer) _specularLayer.hidden = YES;
+        if (_darkEdgeLayer) _darkEdgeLayer.hidden = YES;
+        if (_fresnelGlareLayer) _fresnelGlareLayer.hidden = YES;
+        if (!_edge) {
+            _edge = [CAShapeLayer layer];
+            [self.layer addSublayer:_edge];
+        }
+        [CATransaction begin];
+        [CATransaction setDisableActions:YES];
+        _edge.hidden = NO;
+        _edge.frame = shapeRect;
+        _edge.cornerRadius = shapeRadius;
+        _edge.cornerCurve = curve;
+        CGFloat scale = self.window.screen.scale;
+        if (scale <= 0.0) scale = UIScreen.mainScreen.scale;
+        _edge.borderWidth = 1.0 / MAX(scale, 1.0);
+        _edge.borderColor = [UIColor colorWithWhite:1.0 alpha:0.42].CGColor;
+        [CATransaction commit];
+        return;
+    }
 
     if (_edge) {
-        [_edge removeFromSuperlayer];
-        _edge = nil;
+        _edge.hidden = YES;
     }
+    BOOL enabled = YES;
 
     CGFloat maxAlpha = self.lgSpecularOpacityOverride
         ? self.lgSpecularOpacityOverride.doubleValue : 0.85;

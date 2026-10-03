@@ -58,6 +58,7 @@ NSArray<NSDictionary *> *LGContextMenuItems(void);
 NSArray<NSDictionary *> *LGControlCenterItems(void);
 NSArray<NSDictionary *> *LGClockItems(void);
 NSArray<NSDictionary *> *LGTabBarItems(void);
+NSArray<NSDictionary *> *LGNavigationBarItems(void);
 NSArray<NSDictionary *> *LGGlobalControlsItems(void);
 NSArray<NSDictionary *> *LGLockscreenItems(void);
 NSArray<NSDictionary *> *LGAppLibraryItems(void);

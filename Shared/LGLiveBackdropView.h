@@ -15,6 +15,14 @@ id LGGlassPreferenceValue(NSString *key);
 void LGInvalidateGlassPreferenceCache(void);
 NSString *LGFilterTypeForHostPrefix(NSString *prefix);
 
+typedef NS_ENUM(NSInteger, LGGlassRimMode) {
+    LGGlassRimModeNone,
+    LGGlassRimModeBorder,
+    LGGlassRimModeGlass,
+};
+
+LGGlassRimMode LGGlassRimModeForFilterType(NSString *filterType);
+
 @interface LGLiveBackdropView : UIView
 
 @property (nonatomic, copy) NSString *lgFilterType;

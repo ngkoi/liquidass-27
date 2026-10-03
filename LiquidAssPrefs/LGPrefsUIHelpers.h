@@ -79,3 +79,4 @@ BOOL LGImportPreferencesFromURL(UIViewController *controller, NSURL *url);
 void LGPresentThirdPartyRWBEditor(UIViewController *controller);
 void LGPresentGlobalControlsAppList(UIViewController *controller);
 void LGPresentTabBarAppList(UIViewController *controller);
+void LGPresentNavigationBarAppList(UIViewController *controller);

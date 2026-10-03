@@ -27,5 +27,5 @@ liquidass27_LIBRARIES += roothide
 endif
 
 include $(THEOS)/makefiles/tweak.mk
-SUBPROJECTS += LiquidAssBackboardd LiquidAssRWB LiquidAssPrefs
+SUBPROJECTS += LiquidAssBackboardd LiquidAssRWB LiquidAssPrefs LiquidAssSettings
 include $(THEOS_MAKE_PATH)/aggregate.mk

@@ -487,25 +487,41 @@ static NSDictionary *LGGlassSpecularSetting(NSString *key, CGFloat fallback, CGF
 static const CGFloat kLGUniversalQualityMax = 1.0f;
 static const CGFloat kLGCoverSheetCornerRadiusPoints = 64.0f;
 
-NSArray<NSDictionary *> *LGRendererItemsForHostPrefix(NSString *prefix) {
-    const LGHostDefinition *host = LGHostDefinitionForPreferencePrefix(prefix.UTF8String);
+static BOOL LGDockUsesHomeButtonBorderByDefault(void) {
+    for (UIScene *scene in UIApplication.sharedApplication.connectedScenes) {
+        if (![scene isKindOfClass:UIWindowScene.class] ||
+            scene.activationState != UISceneActivationStateForegroundActive) continue;
+        for (UIWindow *window in ((UIWindowScene *)scene).windows) {
+            if (!window.isKeyWindow) continue;
+            return window.safeAreaInsets.bottom <= 0.0;
+        }
+    }
+    return UIScreen.mainScreen.bounds.size.height <= 736.0;
+}
+
+static NSArray<NSDictionary *> *LGRendererItemsForHostAndPreferencePrefix(
+    NSString *hostPrefix, NSString *preferencePrefix) {
+    const LGHostDefinition *host = LGHostDefinitionForPreferencePrefix(hostPrefix.UTF8String);
     if (!host) return @[];
     NSString *(^key)(NSString *) = ^NSString *(NSString *field) {
-        return [prefix stringByAppendingFormat:@".%@", field];
+        return [preferencePrefix stringByAppendingFormat:@".%@", field];
     };
     NSString *lightTint = [NSString stringWithUTF8String:host->lightTintHex];
     NSString *darkTint = [NSString stringWithUTF8String:host->darkTintHex];
     CGFloat dispersionMax = LGHostIdentifierForDefinition(host) == LGHostIdentifierCoverSheet
         ? kLGUniversalDispersionMax : 2.0f;
+    CGFloat specularDefault = host->specularOpacity;
+    if ([hostPrefix isEqualToString:@"Dock"] && LGDockUsesHomeButtonBorderByDefault())
+        specularDefault = 0.0;
     CGFloat bezelWidthDefault = host->bezelWidthPoints;
-    BOOL enabledByDefault = ![prefix isEqualToString:@"AppIcons"];
+    BOOL enabledByDefault = ![hostPrefix isEqualToString:@"AppIcons"];
     BOOL customScaleEnabledByDefault =
-        [prefix isEqualToString:@"Clock"] ||
-        [prefix isEqualToString:@"CoverSheet"] ||
-        [prefix isEqualToString:@"TabBar"] ||
-        [prefix isEqualToString:@"TabBarSelection"] ||
-        [prefix hasPrefix:@"Prefs"];
-    CGFloat customScaleDefault = [prefix hasPrefix:@"Prefs"] ? 1.50 : 1.00;
+        [hostPrefix isEqualToString:@"Clock"] ||
+        [hostPrefix isEqualToString:@"CoverSheet"] ||
+        [hostPrefix isEqualToString:@"TabBar"] ||
+        [hostPrefix isEqualToString:@"TabBarSelection"] ||
+        [hostPrefix hasPrefix:@"Prefs"];
+    CGFloat customScaleDefault = [hostPrefix hasPrefix:@"Prefs"] ? 1.50 : 1.00;
     NSMutableArray<NSDictionary *> *items = [NSMutableArray arrayWithArray:@[
         LGGlassEnabledSetting(key(@"Enabled"), enabledByDefault),
         @{
@@ -535,10 +551,10 @@ NSArray<NSDictionary *> *LGRendererItemsForHostPrefix(NSString *prefix) {
                         LGLocalized(@"prefs.control.dispersion_strength"),
                         LGLocalized(@"prefs.subtitle.dispersion_strength"),
                         host->dispersionStrength, 1.0, dispersionMax, 1),
-        LGGlassSpecularSetting(key(@"SpecularOpacity"), host->specularOpacity, 0.0, 1.0, 2),
+        LGGlassSpecularSetting(key(@"SpecularOpacity"), specularDefault, 0.0, 1.0, 2),
         LGGlassBlurSetting(key(@"Blur"), host->blur, 0.0, 50.0, 1),
     ]];
-    if (![prefix isEqualToString:@"AssistiveTouch"]) {
+    if (![hostPrefix isEqualToString:@"AssistiveTouch"]) {
         [items addObject:@{
             @"type": @"color", @"key": key(@"LightTintColor"),
             @"title": LGLocalized(@"prefs.control.light_tint_color"),
@@ -550,7 +566,7 @@ NSArray<NSDictionary *> *LGRendererItemsForHostPrefix(NSString *prefix) {
             @"subtitle": LGLocalized(@"prefs.subtitle.dark_tint_color"), @"default": darkTint
         }];
     }
-    if ([prefix isEqualToString:@"CoverSheet"]) {
+    if ([hostPrefix isEqualToString:@"CoverSheet"]) {
         [items insertObject:LGSliderSetting(key(@"CornerRadius"),
                                             LGLocalized(@"prefs.control.corner_radius"),
                                             LGLocalized(@"prefs.subtitle.corner_radius"),
@@ -559,7 +575,7 @@ NSArray<NSDictionary *> *LGRendererItemsForHostPrefix(NSString *prefix) {
                                             0.0, 200.0, 1)
                       atIndex:2];
     }
-    if ([prefix isEqualToString:@"Notification"]) {
+    if ([hostPrefix isEqualToString:@"Notification"]) {
         [items addObject:LGSettingControlledByKey(
             LGMenuSetting(@"Notification.LabelColor",
                           LGLocalized(@"prefs.notification.label_color.title"),
@@ -572,6 +588,10 @@ NSArray<NSDictionary *> *LGRendererItemsForHostPrefix(NSString *prefix) {
             @"Notification.Enabled", @YES)];
     }
     return [items copy];
+}
+
+NSArray<NSDictionary *> *LGRendererItemsForHostPrefix(NSString *prefix) {
+    return LGRendererItemsForHostAndPreferencePrefix(prefix, prefix);
 }
 
 BOOL LGPrefsItemIsVisible(NSDictionary *item) {
@@ -618,15 +638,30 @@ static NSDictionary *LGGlassRefractionSetting(NSString *key, CGFloat fallback, C
 }
 
 static NSDictionary *LGGlassSpecularSetting(NSString *key, CGFloat fallback, CGFloat min, CGFloat max, NSInteger decimals) {
-    (void)fallback; (void)min; (void)max; (void)decimals;
+    (void)min; (void)max; (void)decimals;
 
     NSString *enabledKey = [key hasSuffix:@".SpecularOpacity"]
         ? [[key substringToIndex:key.length - @".SpecularOpacity".length]
            stringByAppendingString:@".SpecularEnabled"]
         : key;
-    return LGSwitchSetting(enabledKey,
-                           LGLocalized(@"prefs.control.specular"),
-                           LGLocalized(@"prefs.subtitle.specular"), YES);
+    NSString *modeKey = [enabledKey hasSuffix:@".SpecularEnabled"]
+        ? [[enabledKey substringToIndex:enabledKey.length - @".SpecularEnabled".length]
+           stringByAppendingString:@".SpecularMode"]
+        : [enabledKey stringByAppendingString:@".Mode"];
+    return @{
+        @"type": @"segmented",
+        @"key": modeKey,
+        @"keys": @[enabledKey],
+        @"legacy_key": enabledKey,
+        @"title": LGLocalized(@"prefs.control.specular"),
+        @"subtitle": LGLocalized(@"prefs.subtitle.specular"),
+        @"default": fallback <= 0.001 ? @"border" : @"glass",
+        @"choices": @[
+            @{ @"value": @"none", @"title": LGLocalized(@"prefs.specular.none") },
+            @{ @"value": @"border", @"title": LGLocalized(@"prefs.specular.border") },
+            @{ @"value": @"glass", @"title": LGLocalized(@"prefs.specular.glass") },
+        ],
+    };
 }
 
 NSDictionary *LGGlassQualitySetting(NSString *key, CGFloat fallback, CGFloat min, CGFloat max, NSInteger decimals) {
@@ -887,6 +922,31 @@ NSArray<NSDictionary *> *LGTabBarItems(void) {
     ]);
 }
 
+NSArray<NSDictionary *> *LGNavigationBarItems(void) {
+    return LGJoinItemGroups(@[
+        @[
+            LGKeyedNavSetting(@"NavigationBar.Exclusions",
+                              LGLocalized(@"prefs.navigation_bar.exclusions.title"),
+                              LGLocalized(@"prefs.navigation_bar.exclusions.subtitle"),
+                              @"editNavigationBarExclusions"),
+        ],
+        @[
+            LGSectionSetting(LGLocalized(@"prefs.navigation_bar.top_fade.section"), nil),
+            LGSettingControlledByKey(
+                LGSwitchSetting(@"NavigationBar.TopFade.Enabled",
+                                LGLocalized(@"prefs.navigation_bar.top_fade.title"),
+                                LGLocalized(@"prefs.navigation_bar.top_fade.subtitle"), YES),
+                @"SettingsControls.Enabled", @YES),
+        ],
+        @[
+            LGSectionSetting(LGLocalized(@"prefs.navigation_bar.text_buttons.section"),
+                             LGLocalized(@"prefs.navigation_bar.text_buttons.subtitle")),
+        ],
+        LGSettingsControlledByKey(LGRendererItemsForHostPrefix(@"PrefsButton"),
+                                  @"SettingsControls.Enabled", @YES),
+    ]);
+}
+
 NSArray<NSDictionary *> *LGLockscreenItems(void) {
     return LGJoinItemGroups(@[
         @[
@@ -1075,14 +1135,16 @@ NSArray<NSDictionary *> *LGCustomViewsItems(void) {
            @"action": @"addCustomViewRule:" },
     ]];
     NSArray<NSString *> *ruleIDs = LGCustomViewRuleIDs();
-    for (NSUInteger index = 0; index < ruleIDs.count; index++) {
-        NSString *ruleID = ruleIDs[index];
+    NSUInteger visibleIndex = 0;
+    for (NSString *ruleID in ruleIDs) {
         NSString *prefix = [@"CustomViews.Rule." stringByAppendingString:ruleID];
+        if ([LGReadPreferenceObject([prefix stringByAppendingString:@".APIHiddenFromPrefs"], @NO) boolValue]) continue;
+        visibleIndex++;
         NSString *name = LGReadPreferenceObject([prefix stringByAppendingString:@".Name"], @"");
         NSString *target = LGReadPreferenceObject([prefix stringByAppendingString:@".TargetClass"], @"");
         [items addObject:@{
             @"type": @"nav",
-            @"title": name.length ? name : [NSString stringWithFormat:LGLocalized(@"prefs.custom_views.rule_format"), (long)index + 1],
+            @"title": name.length ? name : [NSString stringWithFormat:LGLocalized(@"prefs.custom_views.rule_format"), (long)visibleIndex],
             @"subtitle": target.length ? target : LGLocalized(@"prefs.custom_views.rule_empty.subtitle"),
             @"action": @"openCustomViewRule:",
             @"rule_id": ruleID,
@@ -1110,8 +1172,10 @@ static NSArray<NSString *> *LGCustomViewRuleKeys(NSString *ruleID) {
         @"AncestorClass", @"ChildClass", @"GrandchildClass", @"DescendantClass",
         @"SiblingClass", @"ClearBackground", @"BezelWidth",
         @"GlassThickness", @"RefractionScale", @"RefractiveIndex",
-        @"DispersionEnabled", @"DispersionStrength", @"SpecularEnabled",
-        @"SpecularOpacity", @"Blur", @"Quality", @"LightTintColor", @"DarkTintColor"
+        @"DispersionEnabled", @"DispersionStrength", @"SpecularEnabled", @"SpecularMode",
+        @"SpecularOpacity", @"Blur", @"Quality", @"CustomScaleEnabled", @"CustomScale",
+        @"LightTintColor", @"DarkTintColor", @"APIManaged", @"APINonRemovable",
+        @"APIHiddenFromPrefs", @"APIDefaults", @"APIUserOverrides"
     ];
     NSMutableArray<NSString *> *keys = [NSMutableArray arrayWithCapacity:suffixes.count];
     for (NSString *suffix in suffixes)
@@ -1133,6 +1197,8 @@ NSString *LGCreateCustomViewRule(void) {
 
 void LGDeleteCustomViewRule(NSString *ruleID) {
     if (!ruleID.length) return;
+    NSString *nonRemovableKey = [NSString stringWithFormat:@"CustomViews.Rule.%@.APINonRemovable", ruleID];
+    if ([LGReadPreferenceObject(nonRemovableKey, @NO) boolValue]) return;
     NSMutableArray<NSString *> *ids = [LGCustomViewRuleIDs() mutableCopy];
     [ids removeObject:ruleID];
     LGWritePreferenceObject(@"CustomViews.RuleIDs", ids);
@@ -1150,7 +1216,6 @@ NSArray<NSString *> *LGAllCustomViewPreferenceKeys(void) {
 }
 
 NSArray<NSDictionary *> *LGCustomViewRuleItems(NSString *ruleID) {
-    const LGHostDefinition *defaults = &kLGHostRegistry[LGHostIdentifierCustomViews];
     NSString *prefix = [@"CustomViews.Rule." stringByAppendingString:ruleID ?: @""];
     NSString *(^key)(NSString *) = ^NSString *(NSString *suffix) {
         return [NSString stringWithFormat:@"%@.%@", prefix, suffix];
@@ -1188,42 +1253,23 @@ NSArray<NSDictionary *> *LGCustomViewRuleItems(NSString *ruleID) {
                         LGLocalized(@"prefs.custom_views.clear_background.subtitle"), YES),
         LGSectionSetting(LGLocalized(@"prefs.custom_views.appearance.title"),
                          LGLocalized(@"prefs.custom_views.appearance.subtitle")),
-        LGGlassQualitySetting(key(@"Quality"), LG_CUSTOM_VIEW_DEFAULT_QUALITY,
-                              0.1, 1.0, 2),
-        LGSpacerSetting(0.0, 12.0),
-        LGSliderSetting(key(@"BezelWidth"), LGLocalized(@"prefs.control.bezel_width"),
-                        LGLocalized(@"prefs.subtitle.bezel_width"), defaults->bezelWidthPoints, 0.0, 80.0, 1),
-        LGSliderSetting(key(@"GlassThickness"), LGLocalized(@"prefs.control.glass_thickness"),
-                        LGLocalized(@"prefs.subtitle.glass_thickness"), defaults->glassThickness, 0.0, 220.0, 1),
-        LGSliderSetting(key(@"RefractionScale"), LGLocalized(@"prefs.control.refraction"),
-                        LGLocalized(@"prefs.subtitle.refraction"), defaults->refractionScale, 0.0, 5.0, 2),
-        LGSliderSetting(key(@"RefractiveIndex"), LGLocalized(@"prefs.control.refractive_index"),
-                        LGLocalized(@"prefs.subtitle.refractive_index"), defaults->refractiveIndex, 1.0, 3.0, 2),
-        LGSwitchSetting(key(@"DispersionEnabled"),
-                        LGLocalized(@"prefs.control.chromatic_dispersion"),
-                        LGLocalized(@"prefs.subtitle.chromatic_dispersion"), YES),
-        LGSliderSetting(key(@"DispersionStrength"),
-                        LGLocalized(@"prefs.control.dispersion_strength"),
-                        LGLocalized(@"prefs.subtitle.dispersion_strength"), defaults->dispersionStrength, 0.0, 20.0, 1),
-        LGSwitchSetting(key(@"SpecularEnabled"), LGLocalized(@"prefs.control.specular"),
-                        LGLocalized(@"prefs.subtitle.specular"), YES),
-        LGSliderSetting(key(@"SpecularOpacity"), LGLocalized(@"prefs.control.specular"),
-                        LGLocalized(@"prefs.subtitle.specular"), defaults->specularOpacity, 0.0, 1.0, 2),
-        LGSliderSetting(key(@"Blur"), LGLocalized(@"prefs.control.blur"),
-                        LGLocalized(@"prefs.subtitle.blur"), defaults->blur, 0.0, 50.0, 1),
-        @{ @"type": @"color", @"key": key(@"LightTintColor"),
-           @"title": LGLocalized(@"prefs.control.light_tint_color"),
-           @"subtitle": LGLocalized(@"prefs.subtitle.light_tint_color"),
-           @"default": [NSString stringWithUTF8String:defaults->lightTintHex] },
-        @{ @"type": @"color", @"key": key(@"DarkTintColor"),
-           @"title": LGLocalized(@"prefs.control.dark_tint_color"),
-           @"subtitle": LGLocalized(@"prefs.subtitle.dark_tint_color"),
-           @"default": [NSString stringWithUTF8String:defaults->darkTintHex] },
-        LGSectionSetting(@"", @""),
-        LGNavSetting(LGLocalized(@"prefs.custom_views.delete_rule.title"),
-                     LGLocalized(@"prefs.custom_views.delete_rule.subtitle"),
-                     @"deleteCustomViewRule"),
     ]];
+    NSArray<NSDictionary *> *rendererItems =
+        LGRendererItemsForHostAndPreferencePrefix(@"CustomViews", prefix);
+    if (rendererItems.count > 1) {
+        NSArray<NSDictionary *> *sharedItems = [rendererItems subarrayWithRange:
+            NSMakeRange(1, rendererItems.count - 1)];
+        [items addObjectsFromArray:sharedItems];
+    }
+    NSString *nonRemovableKey = key(@"APINonRemovable");
+    if (![LGReadPreferenceObject(nonRemovableKey, @NO) boolValue]) {
+        [items addObjectsFromArray:@[
+            LGSectionSetting(@"", @""),
+            LGNavSetting(LGLocalized(@"prefs.custom_views.delete_rule.title"),
+                         LGLocalized(@"prefs.custom_views.delete_rule.subtitle"),
+                         @"deleteCustomViewRule"),
+        ]];
+    }
     return items;
 }
 

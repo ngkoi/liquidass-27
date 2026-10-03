@@ -343,6 +343,8 @@ static void LGUpdateKeyboardBorder(LGLiveBackdropView *glass) {
     CGFloat radius = MAX(0.0, glass.layer.cornerRadius - lineWidth * 0.5);
     [CATransaction begin];
     [CATransaction setDisableActions:YES];
+    border.hidden = LGGlassRimModeForFilterType(glass.lgFilterType) !=
+                    LGGlassRimModeBorder;
     border.frame = glass.bounds;
     border.contentsScale = scale;
     border.lineWidth = lineWidth;
@@ -429,7 +431,6 @@ static void LGUpdateKeyboardGlass(UIView *stock) {
         glass = LGCreateRegisteredGlass(mergedFrame, nil, @"Keyboard");
         if (!glass) return;
         glass.userInteractionEnabled = NO;
-        glass.lgSpecularEnabledOverride = @NO;
         [container addSubview:glass];
         objc_setAssociatedObject(primary, kLGKeyboardGlassKey, glass,
                                  OBJC_ASSOCIATION_RETAIN_NONATOMIC);

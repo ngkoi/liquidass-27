@@ -26,6 +26,7 @@ NSString * const LGPrefsSurfaceClock = @"Clock";
 NSString * const LGPrefsSurfaceCoverSheet = @"CoverSheet";
 NSString * const LGPrefsSurfaceKeyboard = @"Keyboard";
 NSString * const LGPrefsSurfaceTabBar = @"TabBar";
+NSString * const LGPrefsSurfaceNavigationBar = @"NavigationBar";
 NSString * const LGPrefsSurfaceAssistiveTouch = @"AssistiveTouch";
 NSString * const LGPrefsSurfaceVolumeHUD = @"VolumeHUD";
 NSString * const LGPrefsSurfacePillHUD = @"PillHUD";
@@ -59,6 +60,7 @@ BOOL LGPrefsSurfaceIsKnown(NSString *identifier) {
            [identifier isEqualToString:LGPrefsSurfaceCoverSheet] ||
            [identifier isEqualToString:LGPrefsSurfaceKeyboard] ||
            [identifier isEqualToString:LGPrefsSurfaceTabBar] ||
+           [identifier isEqualToString:LGPrefsSurfaceNavigationBar] ||
            [identifier isEqualToString:LGPrefsSurfaceAssistiveTouch] ||
            [identifier isEqualToString:LGPrefsSurfaceVolumeHUD] ||
            [identifier isEqualToString:LGPrefsSurfacePillHUD] ||
@@ -93,6 +95,7 @@ NSString *LGPrefsSurfaceTitle(NSString *identifier) {
     if ([identifier isEqualToString:LGPrefsSurfaceCoverSheet]) return LGLocalized(@"prefs.surface.coversheet.title");
     if ([identifier isEqualToString:LGPrefsSurfaceKeyboard]) return LGLocalized(@"prefs.surface.keyboard.title");
     if ([identifier isEqualToString:LGPrefsSurfaceTabBar]) return LGLocalized(@"prefs.surface.tab_bar.title");
+    if ([identifier isEqualToString:LGPrefsSurfaceNavigationBar]) return LGLocalized(@"prefs.surface.navigation_bar.title");
     if ([identifier isEqualToString:LGPrefsSurfaceAssistiveTouch]) return LGLocalized(@"prefs.surface.assistive_touch.title");
     if ([identifier isEqualToString:LGPrefsSurfaceVolumeHUD]) return LGLocalized(@"prefs.surface.volume_hud.title");
     if ([identifier isEqualToString:LGPrefsSurfacePillHUD]) return LGLocalized(@"prefs.surface.pill_hud.title");
@@ -126,6 +129,7 @@ UIColor *LGPrefsSurfaceTintColor(NSString *identifier) {
     if ([identifier isEqualToString:LGPrefsSurfaceSettings]) return UIColor.systemGrayColor;
     if ([identifier isEqualToString:LGPrefsSurfaceKeyboard]) return UIColor.systemOrangeColor;
     if ([identifier isEqualToString:LGPrefsSurfaceTabBar]) return UIColor.systemIndigoColor;
+    if ([identifier isEqualToString:LGPrefsSurfaceNavigationBar]) return UIColor.systemTealColor;
     if ([identifier isEqualToString:LGPrefsSurfaceAssistiveTouch]) return UIColor.systemPurpleColor;
     if ([identifier isEqualToString:LGPrefsSurfaceVolumeHUD]) return UIColor.systemYellowColor;
     if ([identifier isEqualToString:LGPrefsSurfacePillHUD]) return UIColor.systemRedColor;
@@ -159,6 +163,7 @@ NSString *LGPrefsSurfaceSymbolName(NSString *identifier) {
     if ([identifier isEqualToString:LGPrefsSurfaceCoverSheet]) return @"hand.draw.fill";
     if ([identifier isEqualToString:LGPrefsSurfaceKeyboard]) return @"keyboard.fill";
     if ([identifier isEqualToString:LGPrefsSurfaceTabBar]) return @"rectangle.bottomthird.inset.filled";
+    if ([identifier isEqualToString:LGPrefsSurfaceNavigationBar]) return @"rectangle.topthird.inset.filled";
     if ([identifier isEqualToString:LGPrefsSurfaceAssistiveTouch]) return @"hand.tap.fill";
     if ([identifier isEqualToString:LGPrefsSurfaceVolumeHUD]) return @"speaker.wave.3.fill";
     if ([identifier isEqualToString:LGPrefsSurfacePillHUD]) return @"bell.badge.fill";
@@ -195,6 +200,7 @@ NSArray<NSDictionary *> *LGPrefsSurfaceItems(NSString *identifier) {
         @{ @"type": @"nav", @"title": LGPrefsSurfaceTitle(LGPrefsSurfaceAppLibrarySearch), @"surface_identifier": LGPrefsSurfaceAppLibrarySearch },
         LGSectionSetting(LGLocalized(@"prefs.surface.group.system.title"), LGLocalized(@"prefs.surface.group.system.subtitle")),
         @{ @"type": @"nav", @"title": LGPrefsSurfaceTitle(LGPrefsSurfaceGlobalControls), @"surface_identifier": LGPrefsSurfaceGlobalControls },
+        @{ @"type": @"nav", @"title": LGPrefsSurfaceTitle(LGPrefsSurfaceNavigationBar), @"surface_identifier": LGPrefsSurfaceNavigationBar },
         @{ @"type": @"nav", @"title": LGPrefsSurfaceTitle(LGPrefsSurfaceKeyboard), @"surface_identifier": LGPrefsSurfaceKeyboard },
         @{ @"type": @"nav", @"title": LGPrefsSurfaceTitle(LGPrefsSurfaceTabBar), @"surface_identifier": LGPrefsSurfaceTabBar },
         @{ @"type": @"nav", @"title": LGPrefsSurfaceTitle(LGPrefsSurfaceAssistiveTouch), @"surface_identifier": LGPrefsSurfaceAssistiveTouch },
@@ -221,6 +227,7 @@ NSArray<NSDictionary *> *LGPrefsSurfaceItems(NSString *identifier) {
     if ([identifier isEqualToString:LGPrefsSurfaceCoverSheet]) return LGRendererItemsForHostPrefix(@"CoverSheet");
     if ([identifier isEqualToString:LGPrefsSurfaceKeyboard]) return LGKeyboardItems();
     if ([identifier isEqualToString:LGPrefsSurfaceTabBar]) return LGTabBarItems();
+    if ([identifier isEqualToString:LGPrefsSurfaceNavigationBar]) return LGNavigationBarItems();
     if ([identifier isEqualToString:LGPrefsSurfaceAssistiveTouch]) return LGRendererItemsForHostPrefix(@"AssistiveTouch");
     if ([identifier isEqualToString:LGPrefsSurfaceVolumeHUD]) return LGRendererItemsForHostPrefix(@"VolumeHUD");
     if ([identifier isEqualToString:LGPrefsSurfacePillHUD]) return LGRendererItemsForHostPrefix(@"PillHUD");

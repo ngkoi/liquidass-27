@@ -743,6 +743,8 @@ static void LGCoverSheetUpdateBottomCornerMask(LGLiveBackdropView *glass) {
         CGRectEqualToRect(border.frame, glass.bounds) && border.path &&
         maskedOrientation.unsignedIntegerValue == (NSUInteger)orientation &&
         fabs(maskedRadius.doubleValue - cornerRadius) < 0.01) {
+        border.hidden = LGGlassRimModeForFilterType(glass.lgFilterType) !=
+                        LGGlassRimModeBorder;
         return;
     }
 
@@ -764,6 +766,8 @@ static void LGCoverSheetUpdateBottomCornerMask(LGLiveBackdropView *glass) {
     border.contentsScale = scale;
     border.lineWidth = lineWidth;
     border.path = maskPath.CGPath;
+    border.hidden = LGGlassRimModeForFilterType(glass.lgFilterType) !=
+                    LGGlassRimModeBorder;
     [CATransaction commit];
     objc_setAssociatedObject(glass, kLGCoverSheetMaskOrientationKey,
                              @((NSUInteger)orientation),

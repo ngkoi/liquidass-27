@@ -1594,6 +1594,18 @@ void LGPresentTabBarAppList(UIViewController *controller) {
                      @[@"com.zhiliaoapp.musically"]);
 }
 
+void LGPresentNavigationBarAppList(UIViewController *controller) {
+    id existing = LGReadPreferenceObject(@"NavigationBar.Exclusions",
+                                         LGReadPreferenceObject(@"GlobalControls.Exclusions", nil));
+    NSArray *defaults = [existing isKindOfClass:NSArray.class] ? existing : @[
+        @"ws.hbang.Terminal", @"com.tigisoftware.Filza",
+        @"com.zhiliaoapp.musically", @"com.hammerandchisel.discord",
+        @"com.spotify.client"
+    ];
+    LGPresentAppList(controller, @"NavigationBar.Exclusions",
+                     LGLocalized(@"prefs.navigation_bar.exclusions.title"), defaults);
+}
+
 void LGPresentPreferencesExport(UIViewController *controller) {
     NSString *jsonString = LGExportPreferencesJSONString();
     if (!jsonString.length) {

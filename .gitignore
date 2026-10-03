@@ -3,3 +3,4 @@ packages/
 .DS_Store
 .git-pr/*
 install.exp
+*.zip
